@@ -1,136 +1,147 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-<meta charset="UTF-8" />
-<title>F-Shutter Heart Camera</title>
-<meta name="viewport" content="width=device-width,initial-scale=1.0,user-scalable=no" />
-<style>
-  body {
-    margin: 0;
-    overflow: hidden;
-    background: #000;
-    color: #fff;
-    font-family: sans-serif;
-    touch-action: none;
-  }
-  video, #canvas {
-    position: absolute;
-    top: 0; left: 0;
-    width: 100%; height: 100%;
-    object-fit: cover;
-    z-index: 1;
-    background: black;
-  }
-  #canvas {
-    z-index: 2;
-    pointer-events: none;
-    display: none; /* 通常は非表示 */
-  }
-  #info-box, #album-button, #center-circle, #graph-container, #shutter-button, #start-bpm-button {
-    position: absolute;
-    z-index: 10;
-    user-select: none;
-  }
-  #info-box {
-    top: 20px; left: 20px;
-    border: 2px solid white;
-    background: rgba(0,0,0,0.3);
-    padding: 10px;
-    border-radius: 5px;
-    font-size: 16px;
-  }
-  #album-button {
-    bottom: 20px; left: 20px;
-    background: rgba(0,0,0,0.3);
-    border: 2px solid white;
-    padding: 10px;
-    border-radius: 5px;
-    font-size: 16px;
-    cursor: pointer;
-  }
-  #gallery {
-    display: none;
-    flex-wrap: wrap;
-    gap: 10px;
-    position: absolute;
-    bottom: 100px; left: 20px;
-    max-width: 80vw;
-    max-height: 300px;
-    overflow-y: auto;
-    z-index: 10;
-    background: rgba(0,0,0,0.8);
-    padding: 10px;
-    border-radius: 8px;
-  }
-  .entry {
-    background: #222;
-    border: 1px solid #fff;
-    padding: 5px;
-    border-radius: 8px;
-    width: 100px;
-    color: #fff;
-    font-size: 12px;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    cursor: pointer;
-  }
-  .entry img {
-    width: 100%;
-    border-radius: 4px;
-    margin-bottom: 4px;
-  }
-  .entry .meta {
-    white-space: pre-wrap;
-    text-align: center;
-    line-height: 1.2;
-  }
-  #center-circle {
-    top: 50%; left: 50%;
-    transform: translate(-50%, -50%);
-    border: 3px solid white;
-    border-radius: 50%;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    font-size: 24px;
-    font-weight: bold;
-    width: 150px;
-    height: 150px;
-    transition: width 0.2s, height 0.2s;
-    pointer-events: none;
-  }
-  #graph-container {
-    top: 50%; right: 15px;
-    transform: translateY(-50%);
-    width: 120px;
-    height: 250px;
-  }
-  #graph {
-    width: 100%;
-    height: 100%;
-    background: rgba(0,0,0,0.4);
-  }
-  #shutter-button {
-    bottom: 10px; left: 50%;
-    transform: translateX(-50%);
-    width: 60px; height: 60px;
-    background-color: red;
-    border-radius: 50%;
-    border: 4px solid white;
-    box-shadow: 0 0 10px rgba(0,0,0,0.5);
-    cursor: pointer;
-  }
-  #start-bpm-button {
-    top: 20px; right: 20px;
-    background: #0f8;
-    color: #000;
-    font-weight: bold;
-    padding: 10px;
-    border-radius: 6px;
-    cursor: pointer;
-  }
-</style>
+  <meta charset="UTF-8" />
+  <title>F-Shutter Heart Camera</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1.0,user-scalable=no" />
+  <style>
+    body {
+      margin: 0;
+      overflow: hidden;
+      background: #000;
+      color: #fff;
+      font-family: sans-serif;
+      touch-action: none;
+    }
+    video, #canvas {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      z-index: 1;
+      filter: none;
+    }
+    #info-box, #album-button, #center-circle, #graph-container, #shutter-button, #start-bpm-button {
+      z-index: 10;
+      position: absolute;
+    }
+    #info-box {
+      top: 20px;
+      left: 20px;
+      border: 2px solid white;
+      background: rgba(0, 0, 0, 0.3);
+      padding: 10px;
+      border-radius: 5px;
+      font-size: 16px;
+      user-select: none;
+    }
+    #album-button {
+      bottom: 20px;
+      left: 20px;
+      background: rgba(0, 0, 0, 0.3);
+      border: 2px solid white;
+      padding: 10px;
+      border-radius: 5px;
+      font-size: 16px;
+      cursor: pointer;
+      user-select: none;
+    }
+    #gallery {
+      display: none;
+      flex-wrap: wrap;
+      gap: 10px;
+      position: absolute;
+      bottom: 100px;
+      left: 20px;
+      max-width: 80vw;
+      max-height: 300px;
+      overflow-y: auto;
+      z-index: 10;
+      background: rgba(0,0,0,0.8);
+      padding: 10px;
+      border-radius: 8px;
+    }
+    .entry {
+      background: #222;
+      border: 1px solid #fff;
+      padding: 5px;
+      border-radius: 8px;
+      width: 80px;
+      color: #fff;
+      font-size: 12px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      cursor: pointer;
+      user-select: none;
+    }
+    .entry img {
+      width: 100%;
+      border-radius: 4px;
+      margin-bottom: 4px;
+    }
+    .entry .meta {
+      text-align: center;
+      line-height: 1.2;
+      white-space: pre-wrap;
+    }
+    #center-circle {
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      border: 3px solid white;
+      border-radius: 50%;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      font-size: 24px;
+      font-weight: bold;
+      user-select: none;
+      width: 150px;
+      height: 150px;
+      transition: width 0.2s, height 0.2s;
+      pointer-events: none;
+    }
+    #graph-container {
+      top: 50%;
+      right: 15px;
+      transform: translateY(-50%);
+      width: 120px;
+      height: 250px;
+      user-select: none;
+    }
+    #graph {
+      width: 100%;
+      height: 100%;
+      background: rgba(0,0,0,0.4);
+    }
+    #shutter-button {
+      bottom: 10px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 60px;
+      height: 60px;
+      background-color: red;
+      border-radius: 50%;
+      border: 4px solid white;
+      box-shadow: 0 0 10px rgba(0,0,0,0.5);
+      cursor: pointer;
+      user-select: none;
+    }
+    #start-bpm-button {
+      top: 20px;
+      right: 20px;
+      background: #0f8;
+      color: #000;
+      font-weight: bold;
+      padding: 10px;
+      border-radius: 6px;
+      cursor: pointer;
+      user-select: none;
+    }
+  </style>
 </head>
 <body>
   <video id="video" autoplay muted playsinline></video>
@@ -140,7 +151,7 @@
   <div id="gallery"></div>
   <div id="center-circle">心のF値</div>
   <div id="graph-container"><canvas id="graph"></canvas></div>
-  <div id="shutter-button"></div>
+  <div id="shutter-button" title="撮影"></div>
   <div id="start-bpm-button">BPM測定</div>
 
 <script>
@@ -162,33 +173,70 @@
   let fValue = 4;
   let lastPinch = 0;
 
-  // ビデオストリーム開始
-  const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
-  video.srcObject = stream;
+  // カメラ起動
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+    video.srcObject = stream;
+  } catch(e) {
+    alert("カメラ起動失敗: " + e);
+    return;
+  }
 
-  // canvas, graphサイズ調整
-  function resize(){
-    if(video.videoWidth && video.videoHeight){
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
-    }
+  function resize() {
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
     graph.width = graph.clientWidth;
     graph.height = graph.clientHeight;
   }
-  window.addEventListener("resize", resize);
+
+  // 円の大きさをfValueに合わせて更新
+  function updateCircleSize() {
+    const radius = 150 * scale;
+    centerCircle.style.width = radius + "px";
+    centerCircle.style.height = radius + "px";
+  }
+
+  // fValue・bpmに応じたCSSフィルターを返す（撮影画面と写真保存両方で使う）
+  function computeCssFilter(fval, bpmVal) {
+    // F値が10以下ならぼかし強め
+    const blurPx = fval <= 10 ? Math.min((10 - fval) * 2, 20) : 0;
+
+    // BPM 80以下→青〜80以上→赤のグラデーション（RGB補間）
+    let r=0, g=0, b=255; // BPM=0に近い時は青
+    if(bpmVal > 0){
+      if(bpmVal < 80){
+        const ratio = bpmVal / 80;
+        r = 0;
+        g = Math.round(255 * ratio);
+        b = 255;
+      } else {
+        const ratio = Math.min((bpmVal - 80) / 120, 1);
+        r = Math.round(255 * ratio);
+        g = 255 - Math.round(255 * ratio);
+        b = 255 - Math.round(255 * ratio);
+      }
+    }
+
+    const brightness = 1.0;
+    return `blur(${blurPx}px) brightness(${brightness}) drop-shadow(0 0 5px rgb(${r},${g},${b}))`;
+  }
 
   video.addEventListener("loadeddata", () => {
     resize();
+    updateCircleSize();
     requestAnimationFrame(loop);
     loadFromLocalStorage();
   });
-
-  // BPM計算とグラフ描画関数省略（前回同様）
+  window.addEventListener("resize", () => {
+    resize();
+    updateCircleSize();
+  });
 
   function drawGraph() {
+    if(history.length === 0) return;
     const arr = history.slice(-graph.width).map(o => o.v);
-    if (arr.length === 0) return;
-    const min = Math.min(...arr), max = Math.max(...arr);
+    const min = Math.min(...arr);
+    const max = Math.max(...arr);
     gctx.clearRect(0, 0, graph.width, graph.height);
     gctx.beginPath();
     arr.forEach((v, i) => {
@@ -201,8 +249,8 @@
     gctx.stroke();
   }
 
-  function calcBPM(){
-    if(history.length < 60) return 0;
+  function calcBPM() {
+    if(history.length < 30) return 0;
     const vals = history.map(o => o.v);
     const times = history.map(o => o.t);
     const mean = vals.reduce((a,b)=>a+b)/vals.length;
@@ -216,84 +264,35 @@
         im[k] -= cen[t] * Math.sin(ang);
       }
     const power = re.map((r,i) => Math.hypot(r, im[i]));
-    const dur = (times[times.length-1] - times[0])/1000;
+    const dur = (times[times.length-1] - times[0]) / 1000;
     if(dur < 5) return 0;
-    const freqRes = 1/dur;
-    const peaks = power.map((p,i) => ({bpm:i*freqRes*60, power:p})).filter(o => o.bpm >=40 && o.bpm <= 200);
+    const freqRes = 1 / dur;
+    const peaks = power.map((p,i) => ({bpm: i*freqRes*60, power: p})).filter(o => o.bpm >=40 && o.bpm <= 200);
     if(!peaks.length) return 0;
-    return Math.round(peaks.reduce((a,b) => a.power > b.power ? a : b).bpm);
-  }
-
-  // F値によるぼかし(px)
-  function getBlurPx(fVal){
-    return fVal <= 10 ? (10 - fVal) * 1.5 : 0;
-  }
-
-  // video用CSSフィルター計算
-  function computeCssFilter(fVal, bpmVal){
-    const blurPx = getBlurPx(fVal);
-    let hueRotate = 0;
-    let saturate = 1;
-    if(bpmVal <= 80){
-      const ratio = 1 - bpmVal/80;
-      hueRotate = 180; // 青
-      saturate = 1 + 0.5 * ratio;
-    }else{
-      const ratio = Math.min((bpmVal - 80)/70, 1);
-      hueRotate = 0; // 赤
-      saturate = 1 + 0.5 * ratio;
-    }
-    return `blur(${blurPx}px) saturate(${saturate.toFixed(2)}) hue-rotate(${hueRotate}deg) brightness(1.1)`;
-  }
-
-  // canvas撮影時の描画（フィルター込み）
-  function drawCaptureCanvas(fVal, bpmVal){
-    ctx.clearRect(0,0,canvas.width,canvas.height);
-    const blurPx = getBlurPx(fVal);
-    ctx.filter = `blur(${blurPx}px)`;
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-
-    if(bpmVal === 0) return;
-
-    const imageData = ctx.getImageData(0,0,canvas.width,canvas.height);
-    const data = imageData.data;
-
-    const toBlueRatio = bpmVal <= 80 ? (1 - bpmVal / 80) : 0;
-    const toRedRatio = bpmVal > 80 ? Math.min((bpmVal - 80) / 70, 1) : 0;
-
-    for(let i=0; i<data.length; i+=4){
-      const r = data[i], g = data[i+1], b = data[i+2];
-      let nr = r * (1 - toBlueRatio*0.5) * (1 - toRedRatio*0.5) + 255 * toRedRatio*0.5;
-      let ng = g * (1 - toBlueRatio*0.5) * (1 - toRedRatio*0.5);
-      let nb = b * (1 - toRedRatio*0.5) * (1 + toBlueRatio*0.5);
-
-      data[i] = Math.min(255, nr);
-      data[i+1] = Math.min(255, ng);
-      data[i+2] = Math.min(255, nb);
-    }
-    ctx.putImageData(imageData, 0, 0);
+    return Math.round(peaks.reduce((a,b)=>a.power > b.power ? a : b).bpm);
   }
 
   function loop(){
-    // videoにリアルタイムCSSフィルター反映
+    // videoにリアルタイムフィルター適用
     video.style.filter = computeCssFilter(fValue, bpm);
 
-    // canvasは普段非表示、撮影時だけ表示して描画
-    // 今は非表示のままなのでクリアだけしておく
-    ctx.clearRect(0,0,canvas.width,canvas.height);
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    // canvasは普段非表示で撮影時のみ使う
 
     if(measuring){
       const size = 100;
       const x = canvas.width/2 - size/2;
       const y = canvas.height/2 - size/2;
-      const data = ctx.getImageData(x,y,size,size).data;
+      const data = ctx.getImageData(x, y, size, size).data;
       let sum = 0;
       for(let i=0; i<data.length; i+=4) sum += data[i];
       const avg = sum / (data.length/4);
       history.push({v: avg, t: Date.now()});
       if(history.length > 512) history.shift();
-      drawGraph();
     }
+
+    drawGraph();
+
     requestAnimationFrame(loop);
   }
 
@@ -304,63 +303,82 @@
     bpmText.textContent = "測定中...";
     setTimeout(() => {
       measuring = false;
-      bpm = calcBPM();
-      bpmText.textContent = bpm > 0 ? bpm : "---";
+      const newBpm = calcBPM();
+      if(newBpm > 0){
+        bpm = newBpm;
+        bpmText.textContent = bpm;
+      } else {
+        bpmText.textContent = "---";
+      }
     }, 8000);
   };
 
-  // アルバム登録と保存
-  function addEntryToGallery(url, fVal, bpmVal, date){
+  document.getElementById("shutter-button").onclick = () => {
+    // 撮影キャンバスに動画を描画しフィルター反映
+    const tmp = document.createElement("canvas");
+    tmp.width = canvas.width;
+    tmp.height = canvas.height;
+    const tc = tmp.getContext("2d");
+
+    // フィルターは撮影時も反映
+    // canvasに直接描くのでCSSフィルターは反映されないため手動で処理
+    // ここではblurのみ簡易的に再現
+    tc.filter = `blur(${fValue <= 10 ? Math.min((10 - fValue)*2, 20) : 0}px)`;
+
+    tc.drawImage(video, 0, 0, tmp.width, tmp.height);
+
+    // カラーフィルターはcanvasピクセル操作で後処理
+    const imgData = tc.getImageData(0, 0, tmp.width, tmp.height);
+    const data = imgData.data;
+
+    // BPMによる色補正 (青〜赤のグラデーション)
+    for(let i=0; i<data.length; i+=4){
+      const r = data[i], g = data[i+1], b = data[i+2];
+
+      let nr= r, ng= g, nb= b;
+      if(bpm > 0){
+        if(bpm < 80){
+          const ratio = bpm / 80;
+          nr = r * 0;
+          ng = g * ratio;
+          nb = b * 1;
+        } else {
+          const ratio = Math.min((bpm - 80) / 120, 1);
+          nr = r * ratio + (1-ratio)*0;
+          ng = g * (1 - ratio);
+          nb = b * (1 - ratio);
+        }
+      }
+      data[i] = nr;
+      data[i+1] = ng;
+      data[i+2] = nb;
+    }
+    tc.putImageData(imgData, 0, 0);
+
+    const url = tmp.toDataURL("image/jpeg", 0.9);
+
     const entry = document.createElement("div");
     entry.className = "entry";
-
     const img = document.createElement("img");
     img.src = url;
-    // アルバム写真にもCSSで軽くフィルター
-    img.style.filter = computeCssFilter(fVal, bpmVal);
 
     const meta = document.createElement("div");
     meta.className = "meta";
-    meta.textContent = `F${fVal.toFixed(1)}\n${bpmVal} BPM\n${date.toLocaleString()}`;
+    meta.textContent = `F${fValue.toFixed(1)}\n${bpm} BPM\n${new Date().toLocaleString()}`;
 
     entry.appendChild(img);
     entry.appendChild(meta);
     gallery.appendChild(entry);
-  }
 
-  function saveToLocalStorage(url, fVal, bpmVal, date){
-    let album = JSON.parse(localStorage.getItem("fshutter_album") || "[]");
-    album.push({url, fVal, bpmVal, date: date.toISOString()});
-    localStorage.setItem("fshutter_album", JSON.stringify(album));
-  }
+    saveToLocalStorage();
 
-  function loadFromLocalStorage(){
-    const album = JSON.parse(localStorage.getItem("fshutter_album") || "[]");
-    album.forEach(({url, fVal, bpmVal, date})=>{
-      addEntryToGallery(url, fVal, bpmVal, new Date(date));
-    });
-  }
-
-  document.getElementById("shutter-button").onclick = () => {
-    // canvasを表示して撮影
-    canvas.style.display = "block";
-    drawCaptureCanvas(fValue, bpm);
-    // 画像保存
-    const url = canvas.toDataURL("image/jpeg", 0.9);
-    const now = new Date();
-    addEntryToGallery(url, fValue, bpm, now);
-    saveToLocalStorage(url, fValue, bpm, now);
-
-    // canvasは再び非表示に
-    canvas.style.display = "none";
   };
 
   document.getElementById("album-button").onclick = () => {
     gallery.style.display = gallery.style.display === "none" ? "flex" : "none";
   };
 
-  // ピンチイン・アウトでF値調整
-  canvas.addEventListener("touchstart", e => {
+  canvas.addEventListener("touchstart", (e) => {
     if(e.touches.length === 2){
       lastPinch = Math.hypot(
         e.touches[0].clientX - e.touches[1].clientX,
@@ -368,7 +386,7 @@
       );
     }
   });
-  canvas.addEventListener("touchmove", e => {
+  canvas.addEventListener("touchmove", (e) => {
     if(e.touches.length === 2){
       const d = Math.hypot(
         e.touches[0].clientX - e.touches[1].clientX,
@@ -379,13 +397,41 @@
       scale = Math.min(Math.max(scale, 0.25), 4);
       fValue = 16 / scale / 4;
       fText.textContent = fValue.toFixed(1);
-
-      const radius = 150 * scale;
-      centerCircle.style.width = radius + "px";
-      centerCircle.style.height = radius + "px";
+      updateCircleSize();
     }
   });
 
+  // LocalStorage保存・復元
+  function saveToLocalStorage(){
+    try{
+      const items = [];
+      gallery.querySelectorAll(".entry").forEach(e => {
+        const img = e.querySelector("img");
+        const meta = e.querySelector(".meta").textContent;
+        items.push({img: img.src, meta});
+      });
+      localStorage.setItem("fshutter_album", JSON.stringify(items));
+    }catch(e){console.warn("保存失敗", e);}
+  }
+  function loadFromLocalStorage(){
+    try{
+      const raw = localStorage.getItem("fshutter_album");
+      if(!raw) return;
+      const items = JSON.parse(raw);
+      items.forEach(({img, meta}) => {
+        const entry = document.createElement("div");
+        entry.className = "entry";
+        const image = document.createElement("img");
+        image.src = img;
+        const m = document.createElement("div");
+        m.className = "meta";
+        m.textContent = meta;
+        entry.appendChild(image);
+        entry.appendChild(m);
+        gallery.appendChild(entry);
+      });
+    }catch(e){console.warn("復元失敗", e);}
+  }
 })();
 </script>
 </body>
