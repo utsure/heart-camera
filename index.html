@@ -182,120 +182,10 @@
     const minF = 1.0, maxF = 16.0;
     fValue = Math.min(maxF, Math.max(minF, newFval));
     fValueText.textContent = fValue.toFixed(1);
-    const size = 300 - ((fValue - 1.0) / 15) * 150;
+    const size = 150 + ((fValue - 1.0) / 15) * 150;
     centerCircle.style.width = `${size}px`;
     centerCircle.style.height = `${size}px`;
   }
-
-  function loop() {
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.globalAlpha = Math.max(0.05, Math.min(1.0, 1 - fValue / 16));
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-    if (measuring) {
-      const size = 100;
-      const x = canvas.width / 2 - size / 2;
-      const y = canvas.height / 2 - size / 2;
-      const data = ctx.getImageData(x, y, size, size).data;
-      let sum = 0;
-      for (let i = 0; i < data.length; i += 4) sum += data[i];
-      const avg = sum / (data.length / 4);
-      history.push({ v: avg, t: Date.now() });
-      if (history.length > 300) history.shift();
-      drawGraph();
-    }
-    requestAnimationFrame(loop);
-  }
-
-  function drawGraph() {
-    const arr = history.map(o => o.v);
-    if (arr.length < 2) return;
-    const min = Math.min(...arr), max = Math.max(...arr);
-    const range = max - min || 1;
-    gctx.clearRect(0, 0, graph.width, graph.height);
-    gctx.beginPath();
-    gctx.strokeStyle = "#0f8";
-    gctx.lineWidth = 2.5;
-    arr.forEach((v, i) => {
-      const x = graph.width - ((v - min) / range) * graph.width;
-      const y = (i / (arr.length - 1)) * graph.height;
-      i === 0 ? gctx.moveTo(x, y) : gctx.lineTo(x, y);
-    });
-    gctx.stroke();
-  }
-
-  function calcBPM() {
-    const values = history.map(h => h.v);
-    const times = history.map(h => h.t);
-    if (times.length < 50) return 0;
-    const mean = values.reduce((a, b) => a + b) / values.length;
-    const peaks = [];
-    for (let i = 1; i < values.length - 1; i++) {
-      if (values[i] > mean && values[i] > values[i - 1] && values[i] > values[i + 1]) {
-        peaks.push(times[i]);
-      }
-    }
-    if (peaks.length < 2) return 0;
-    const intervals = peaks.slice(1).map((t, i) => t - peaks[i]);
-    const avgInterval = intervals.reduce((a, b) => a + b) / intervals.length;
-    return avgInterval ? 60000 / avgInterval : 0;
-  }
-
-  startBpmButton.addEventListener("click", async () => {
-    if (!measuring) {
-      measuring = true;
-      history = [];
-      bpmValueText.textContent = "測定中...";
-      centerCircle.style.borderColor = "#0f8";
-      const caps = videoTrack.getCapabilities();
-      if (caps.torch) await videoTrack.applyConstraints({ advanced: [{ torch: true }] });
-      setTimeout(async () => {
-        measuring = false;
-        const result = calcBPM();
-        bpm = result > 0 ? Math.round(result) : 0;
-        bpmValueText.textContent = bpm > 0 ? bpm : "---";
-        gctx.clearRect(0, 0, graph.width, graph.height);
-        centerCircle.style.borderColor = "white";
-        if (caps.torch) await videoTrack.applyConstraints({ advanced: [{ torch: false }] });
-      }, 8000);
-    }
-  });
-
-  shutterButton.addEventListener("click", () => {
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-    const imgCanvas = document.createElement("canvas");
-    imgCanvas.width = canvas.width;
-    imgCanvas.height = canvas.height;
-    const imgCtx = imgCanvas.getContext("2d");
-    imgCtx.drawImage(video, 0, 0, canvas.width, canvas.height);
-    if (fValue < 10) {
-      imgCtx.fillStyle = "rgba(255,255,255,0.1)";
-      imgCtx.fillRect(0, 0, canvas.width, canvas.height);
-    }
-    if (bpm > 80) {
-      imgCtx.fillStyle = "rgba(0,0,0,0.3)";
-      imgCtx.fillRect(0, 0, canvas.width, canvas.height);
-    } else if (bpm > 0 && bpm <= 80) {
-      imgCtx.fillStyle = "rgba(255,255,255,0.1)";
-      imgCtx.fillRect(0, 0, canvas.width, canvas.height);
-    }
-    const url = imgCanvas.toDataURL("image/jpeg", 0.9);
-    const now = new Date();
-    const timestamp = now.toLocaleString();
-    const entry = document.createElement("div");
-    entry.className = "entry";
-    const img = document.createElement("img");
-    img.src = url;
-    const meta = document.createElement("div");
-    meta.className = "meta";
-    meta.innerHTML = `${timestamp}<br>F: ${fValue.toFixed(1)}<br>BPM: ${bpm > 0 ? bpm : "---"}`;
-    entry.appendChild(img);
-    entry.appendChild(meta);
-    gallery.appendChild(entry);
-  });
-
-  albumButton.addEventListener("click", () => {
-    gallery.style.display = gallery.style.display === "none" ? "flex" : "none";
-  });
 
   let initialPinch = null;
   window.addEventListener("touchmove", e => {
@@ -311,8 +201,43 @@
       initialPinch = dist;
     }
   }, { passive: false });
-
   window.addEventListener("touchend", () => { initialPinch = null });
+
+  shutterButton.addEventListener("click", () => {
+    // 映像をcanvasに描画
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+    // フィルター適用（F値とBPMに応じて）
+    if (fValue < 10) {
+      ctx.filter = 'blur(3px)';
+    } else {
+      ctx.filter = 'none';
+    }
+
+    if (bpm > 80) {
+      ctx.globalAlpha = 0.7; // 暗くする
+    } else {
+      ctx.globalAlpha = 1.0; // 明るく保つ
+    }
+
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    ctx.filter = 'none';
+    ctx.globalAlpha = 1.0;
+
+    // 保存
+    const url = canvas.toDataURL("image/jpeg", 0.9);
+    const entry = document.createElement("div");
+    entry.className = "entry";
+    entry.innerHTML = `
+      <img src="${url}" />
+      <div class="meta">
+        F${fValue.toFixed(1)}<br>
+        BPM ${Math.round(bpm)}<br>
+        ${new Date().toLocaleTimeString()}
+      </div>
+    `;
+    gallery.appendChild(entry);
+  });
 })();
 </script>
 </body>
