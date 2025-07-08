@@ -100,6 +100,41 @@
   #gallery img:hover {
     transform: scale(1.05);
   }
+
+  /* 追加：F値バロメーターUI */
+  #fval-ui {
+    position: absolute;
+    top: 10px;
+    left: 10px;
+    width: 150px;
+    height: 40px;
+    background: rgba(255, 255, 255, 0.1);
+    border: 2px solid white;
+    border-radius: 20px;
+    cursor: pointer;
+    user-select: none;
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    padding: 5px 10px;
+    transition: width 0.3s, height 0.3s;
+    z-index: 20;
+  }
+  #fval-indicator {
+    height: 30px;
+    background: #0f8;
+    border-radius: 15px;
+    transition: width 0.3s, height 0.3s;
+  }
+  #fval-text {
+    margin-left: 10px;
+    color: white;
+    font-weight: bold;
+    min-width: 60px;
+    text-align: center;
+    font-family: monospace;
+    user-select: none;
+  }
 </style>
 </head>
 <body>
@@ -125,6 +160,12 @@
 
   <div id="gallery"></div>
 
+  <!-- 追加：F値調整バロメーター -->
+  <div id="fval-ui">
+    <div id="fval-indicator"></div>
+    <div id="fval-text">F値: 4.0</div>
+  </div>
+
 <script>
 (async () => {
   const video = document.getElementById("video");
@@ -140,6 +181,11 @@
   const ctx = canvas.getContext("2d");
   const gctx = graph.getContext("2d");
 
+  // F値UI要素
+  const fvalUI = document.getElementById("fval-ui");
+  const fvalIndicator = document.getElementById("fval-indicator");
+  const fvalText2 = document.getElementById("fval-text");
+
   let videoTrack;
   let scale = 1;
   let fValue = 4;
@@ -149,6 +195,9 @@
   let measuring = false;
   let history = [];
   let lastPinch = 0;
+
+  // ドラッグフラグ
+  let dragging = false;
 
   // カメラ起動
   try {
@@ -174,6 +223,67 @@
   });
   window.addEventListener("resize", resize);
 
+  // F値UI更新関数
+  function updateFvalUI(fval) {
+    const minF = 1.0;
+    const maxF = 16.0;
+    const clamped = Math.min(maxF, Math.max(minF, fval));
+    fValue = clamped;
+
+    // ノーマライズ（F値小さいほど大きく表示）
+    const norm = (maxF - clamped) / (maxF - minF); // 0〜1
+    const width = 50 + norm * 100;  // 50〜150px
+    const height = 20 + norm * 20;  // 20〜40px
+
+    fvalUI.style.width = `${width}px`;
+    fvalUI.style.height = `${height}px`;
+    fvalIndicator.style.width = `${width * norm}px`;
+    fvalIndicator.style.height = `${height - 10}px`;
+    fvalText2.innerText = `F値: ${clamped.toFixed(1)}`;
+
+    // UI内と既存UIのF値表示同期
+    fvalText.innerText = `F値: ${clamped.toFixed(1)}`;
+  }
+
+  // 初期表示
+  updateFvalUI(fValue);
+
+  // ドラッグ開始
+  fvalUI.addEventListener("mousedown", (e) => {
+    dragging = true;
+    e.preventDefault();
+  });
+  window.addEventListener("mouseup", () => {
+    dragging = false;
+  });
+  window.addEventListener("mousemove", (e) => {
+    if (!dragging) return;
+    const rect = fvalUI.getBoundingClientRect();
+    let pos = e.clientX - rect.left;
+    pos = Math.min(rect.width, Math.max(0, pos));
+    const newFval = 1 + (pos / rect.width) * 15;
+    updateFvalUI(newFval);
+  });
+
+  // タッチ対応
+  fvalUI.addEventListener("touchstart", (e) => {
+    dragging = true;
+    e.preventDefault();
+  });
+  window.addEventListener("touchend", () => {
+    dragging = false;
+  });
+  window.addEventListener("touchmove", (e) => {
+    if (!dragging) return;
+    const touch = e.touches[0];
+    const rect = fvalUI.getBoundingClientRect();
+    let pos = touch.clientX - rect.left;
+    pos = Math.min(rect.width, Math.max(0, pos));
+    const newFval = 1 + (pos / rect.width) * 15;
+    updateFvalUI(newFval);
+  });
+
+  // メインループ
   function loop() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.filter = "none";
@@ -194,15 +304,18 @@
     // 明るさ調整: BPMが80を基準、60以下で明るく、100以上で暗く
     let alphaBase = 1;
     if (bpm <= 60) {
-      alphaBase = 1.3; // 明るく
+      alphaBase = 1.3;
     } else if (bpm >= 100) {
-      alphaBase = 0.7; // 暗く
+      alphaBase = 0.7;
     }
+
+    // fValueに連動したグローバルアルファ設定
     ctx.globalAlpha = (4 / fValue) * alphaBase;
 
     requestAnimationFrame(loop);
   }
 
+  // グラフ描画
   function drawGraph() {
     const arr = history.slice(-200).map((o) => o.v);
     const min = Math.min(...arr),
@@ -243,112 +356,65 @@
         re[k] += cen[t] * Math.cos(ang);
         im[k] -= cen[t] * Math.sin(ang);
       }
-    const power = re.map((r, i) => Math.hypot(r, im[i]));
-    const freqRes = 1 / dur;
-    const peaks = power
-      .map((p, i) => ({ bpm: i * freqRes * 60, power: p }))
-      .filter((o) => o.bpm >= 40 && o.bpm <= 200);
-    if (!peaks.length) return 0;
-    const peak = peaks.reduce((a, b) => (a.power > b.power ? a : b));
-    return Math.round(peak.bpm);
-  }
 
-  flashBtn.onclick = async () => {
-    if (!videoTrack || measuring) return;
-    measuring = true;
-    history = [];
-    instr.style.display = "none";
-    bpmText.innerText = "BPM: 計測中...";
-    try {
-      await videoTrack.applyConstraints({ advanced: [{ torch: true }] });
-    } catch (e) {
-      console.warn("Torch failed", e);
-    }
-    setTimeout(async () => {
-      measuring = false;
-      try {
-        await videoTrack.applyConstraints({ advanced: [{ torch: false }] });
-      } catch (e) {}
-      const r = calcBPM();
-      if (r < 40 || r > 200) {
-        bpmText.innerText = "BPM: 測定失敗";
-        bpm = avgBpm;
-      } else {
-        bpm = r;
-        avgBpm = bpm;
-        bpmText.innerText = `BPM: ${bpm}`;
+    let maxMag = 0,
+      peakIndex = 0;
+    for (let k = 1; k < n / 2; k++) {
+      const mag = Math.sqrt(re[k] * re[k] + im[k] * im[k]);
+      if (mag > maxMag) {
+        maxMag = mag;
+        peakIndex = k;
       }
-    }, 8000);
-  };
-
-  capBtn.onclick = () => {
-    // 撮影用キャンバス生成
-    const tmp = document.createElement("canvas");
-    tmp.width = canvas.width;
-    tmp.height = canvas.height;
-    const tc = tmp.getContext("2d");
-
-    // 写真にかける明暗フィルターの適用
-    tc.filter = computeFilterForBPM(bpm, fValue);
-    tc.drawImage(canvas, 0, 0);
-
-    const url = tmp.toDataURL("image/jpeg", 0.9);
-    const a = document.createElement("a"),
-      img = document.createElement("img");
-    a.href = url;
-    a.download = `f${fValue.toFixed(1)}_bpm${bpm || avgBpm}.jpg`;
-    img.src = url;
-    a.appendChild(img);
-    gallery.appendChild(a);
-    gallery.scrollLeft = gallery.scrollWidth;
-  };
-
-  // BPMに応じた明暗フィルターを返す（CSS filter形式）
-  function computeFilterForBPM(bpmValue, fval) {
-    // 基準80
-    let brightness = 1;
-    if (bpmValue <= 60) brightness = 1.3;
-    else if (bpmValue >= 100) brightness = 0.7;
-
-    // F値に応じて少しぼかしを加える（fval大きい＝絞る＝ピント深くなる＝ぼかし弱い）
-    // ここは適当に調整可能
-    let blurPx = (4 - fval) * 2;
-    if (blurPx < 0) blurPx = 0;
-    if (blurPx > 6) blurPx = 6;
-
-    return `brightness(${brightness}) blur(${blurPx}px)`;
+    }
+    const bpmCalc = 60 / (dur / peakIndex);
+    return bpmCalc;
   }
 
-  // ホイールでF値調整
-  canvas.onwheel = (e) => {
-    e.preventDefault();
-    scale += -e.deltaY * 0.001;
-    scale = Math.max(0.25, Math.min(scale, 4));
-    fValue = 16 / scale / 4;
-    fvalText.innerText = `F値: ${fValue.toFixed(1)}`;
-  };
-
-  // ピンチ操作でF値調整
-  canvas.addEventListener("touchstart", (e) => {
-    if (e.touches.length === 2)
-      lastPinch = Math.hypot(
-        e.touches[0].clientX - e.touches[1].clientX,
-        e.touches[0].clientY - e.touches[1].clientY
-      );
-  });
-  canvas.addEventListener("touchmove", (e) => {
-    if (e.touches.length === 2) {
-      const d = Math.hypot(
-        e.touches[0].clientX - e.touches[1].clientX,
-        e.touches[0].clientY - e.touches[1].clientY
-      );
-      scale += (d - lastPinch) * 0.005;
-      lastPinch = d;
-      scale = Math.max(0.25, Math.min(scale, 4));
-      fValue = 16 / scale / 4;
-      fvalText.innerText = `F値: ${fValue.toFixed(1)}`;
+  // 計測開始ボタン
+  flashBtn.addEventListener("click", () => {
+    if (measuring) {
+      measuring = false;
+      instr.style.display = "block";
+      bpmText.innerText = "BPM: ---";
+      bpm = 0;
+      history = [];
+    } else {
+      measuring = true;
+      instr.style.display = "none";
+      history = [];
     }
   });
+
+  // キャプチャボタン（画像保存）
+  capBtn.addEventListener("click", () => {
+    const url = canvas.toDataURL("image/jpeg", 0.8);
+    const img = document.createElement("img");
+    img.src = url;
+    gallery.appendChild(img);
+  });
+
+  // ホイール操作でF値変更・UI同期
+  window.addEventListener("wheel", (e) => {
+    if (e.deltaY < 0) {
+      updateFvalUI(fValue - 0.5);
+    } else if (e.deltaY > 0) {
+      updateFvalUI(fValue + 0.5);
+    }
+  });
+
+  // BPM表示更新ループ
+  setInterval(() => {
+    if (measuring) {
+      const bpmCalc = calcBPM();
+      if (bpmCalc > 30 && bpmCalc < 180) {
+        bpm = bpmCalc;
+        avgBpm = bpmCalc;
+      } else {
+        bpm = avgBpm;
+      }
+      bpmText.innerText = `BPM: ${bpm.toFixed(1)}`;
+    }
+  }, 1000);
 })();
 </script>
 </body>
