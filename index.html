@@ -22,7 +22,7 @@
       object-fit: cover;
       z-index: 1;
     }
-    #info-box, #album-box, #center-circle, #graph-container, #shutter-button {
+    #info-box, #album-button, #center-circle, #graph-container, #shutter-button {
       z-index: 10;
       position: absolute;
     }
@@ -35,7 +35,7 @@
       border-radius: 5px;
       font-size: 16px;
     }
-    #album-box {
+    #album-button {
       bottom: 20px;
       left: 20px;
       background: rgba(0, 0, 0, 0.3);
@@ -46,7 +46,7 @@
       cursor: pointer;
     }
     #gallery {
-      display: flex;
+      display: none;
       flex-wrap: wrap;
       gap: 5px;
       position: absolute;
@@ -54,6 +54,9 @@
       left: 20px;
       max-width: 80vw;
       z-index: 10;
+      background: rgba(0,0,0,0.8);
+      padding: 10px;
+      border-radius: 8px;
     }
     #gallery img {
       width: 60px;
@@ -74,8 +77,8 @@
       align-items: center;
       font-size: 24px;
       font-weight: bold;
-      cursor: pointer;
-      transition: border-color 0.3s;
+      user-select: none;
+      transition: border-color 0.3s, width 0.3s, height 0.3s;
     }
     #graph-container {
       top: 50%;
@@ -100,17 +103,29 @@
       box-shadow: 0 0 10px rgba(0,0,0,0.5);
       cursor: pointer;
     }
+    #start-bpm-button {
+      top: 20px;
+      right: 20px;
+      background: #0f8;
+      color: #000;
+      font-weight: bold;
+      padding: 10px;
+      border-radius: 6px;
+      cursor: pointer;
+      z-index: 10;
+    }
   </style>
 </head>
 <body>
   <video id="video" autoplay muted playsinline></video>
   <canvas id="canvas"></canvas>
   <div id="info-box">F: <span id="f-value">---</span><br>BPM: <span id="bpm-value">---</span></div>
-  <div id="album-box">アルバム</div>
+  <div id="album-button">アルバム</div>
   <div id="gallery"></div>
   <div id="center-circle">心のF値</div>
   <div id="graph-container"><canvas id="graph"></canvas></div>
   <div id="shutter-button"></div>
+  <div id="start-bpm-button">BPM測定</div>
 <script>
 (async () => {
   const video = document.getElementById("video");
@@ -121,6 +136,8 @@
   const centerCircle = document.getElementById("center-circle");
   const shutterButton = document.getElementById("shutter-button");
   const gallery = document.getElementById("gallery");
+  const albumButton = document.getElementById("album-button");
+  const startBpmButton = document.getElementById("start-bpm-button");
   const ctx = canvas.getContext("2d");
   const gctx = graph.getContext("2d");
 
@@ -130,9 +147,7 @@
   let history = [];
   let videoTrack;
 
-  const stream = await navigator.mediaDevices.getUserMedia({
-    video: { facingMode: "environment" }
-  });
+  const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
   video.srcObject = stream;
   videoTrack = stream.getVideoTracks()[0];
 
@@ -153,12 +168,14 @@
     const minF = 1.0, maxF = 16.0;
     fValue = Math.min(maxF, Math.max(minF, newFval));
     fValueText.textContent = fValue.toFixed(1);
+    const size = 200 - ((fValue - 1.0) / 15) * 100;
+    centerCircle.style.width = `${size}px`;
+    centerCircle.style.height = `${size}px`;
   }
 
   function loop() {
     ctx.globalAlpha = Math.min(1.5, Math.max(0.1, (4 / fValue)));
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-
     if (measuring) {
       const size = 100;
       const x = canvas.width / 2 - size / 2;
@@ -208,26 +225,22 @@
     return avgInterval ? 60000 / avgInterval : 0;
   }
 
-  centerCircle.addEventListener("click", async () => {
+  startBpmButton.addEventListener("click", async () => {
     if (!measuring) {
       measuring = true;
       history = [];
       bpmValueText.textContent = "測定中...";
       centerCircle.style.borderColor = "#0f8";
-
-      const capabilities = videoTrack.getCapabilities();
-      if (capabilities.torch) {
-        await videoTrack.applyConstraints({ advanced: [{ torch: true }] });
-      }
-
+      const caps = videoTrack.getCapabilities();
+      if (caps.torch) await videoTrack.applyConstraints({ advanced: [{ torch: true }] });
       setTimeout(async () => {
         measuring = false;
-        centerCircle.style.borderColor = "white";
-        bpmValueText.textContent = "---";
+        const result = calcBPM();
+        if (result > 0) bpmValueText.textContent = Math.round(result);
+        else bpmValueText.textContent = "---";
         gctx.clearRect(0, 0, graph.width, graph.height);
-        if (capabilities.torch) {
-          await videoTrack.applyConstraints({ advanced: [{ torch: false }] });
-        }
+        centerCircle.style.borderColor = "white";
+        if (caps.torch) await videoTrack.applyConstraints({ advanced: [{ torch: false }] });
       }, 8000);
     }
   });
@@ -238,6 +251,10 @@
     const img = document.createElement("img");
     img.src = url;
     gallery.appendChild(img);
+  });
+
+  albumButton.addEventListener("click", () => {
+    gallery.style.display = gallery.style.display === "none" ? "flex" : "none";
   });
 
   let initialPinch = null;
@@ -256,16 +273,6 @@
   }, { passive: false });
 
   window.addEventListener("touchend", () => { initialPinch = null });
-
-  setInterval(() => {
-    if (measuring) {
-      const bpmNow = calcBPM();
-      if (bpmNow > 0) {
-        bpm = bpm * 0.7 + bpmNow * 0.3;
-        bpmValueText.textContent = Math.round(bpm);
-      }
-    }
-  }, 1000);
 })();
 </script>
 </body>
