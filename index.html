@@ -42,6 +42,7 @@
       padding: 15px;
       border-radius: 10px;
       z-index: 20;
+      pointer-events: none;
     }
     .button-container {
       position: absolute;
@@ -94,11 +95,10 @@ let video, canvas, ctx;
 let videoTrack;
 let fValue = 4.0;
 let bpm = 0;
-let redValues = [];
-let timestamps = [];
-let scale = 1.0;
+let redHistory = []; // 名前を変更
 let lastPinchDist = 0;
 let isFlashOn = false;
+let scale = 1.0;
 
 const bpmText = document.getElementById("bpm");
 const fvalText = document.getElementById("fval-display");
@@ -106,7 +106,6 @@ const instructions = document.getElementById("instructions");
 const flashBtn = document.getElementById("flash-btn");
 const captureBtn = document.getElementById("capture-btn");
 
-// --- 初期化処理 ---
 async function initCamera() {
   video = document.createElement("video");
   video.setAttribute("autoplay", true);
@@ -121,13 +120,10 @@ async function initCamera() {
       } 
     });
     video.srcObject = stream;
-    // ライト制御のためにトラックを保持
     const tracks = stream.getVideoTracks();
-    if (tracks.length > 0) {
-      videoTrack = tracks[0];
-    }
+    if (tracks.length > 0) videoTrack = tracks[0];
   } catch (err) {
-    alert("カメラの起動に失敗しました。ブラウザのカメラ利用を許可してください。また、このページはHTTPS接続である必要があります。\n" + err);
+    alert("カメラの起動に失敗しました。ブラウザのカメラ利用を許可してください。\n" + err);
     return;
   }
 
@@ -137,27 +133,19 @@ async function initCamera() {
   });
 }
 
-// --- キャンバスと操作の設定 ---
 function setupCanvas() {
   canvas = document.getElementById("canvas");
   ctx = canvas.getContext("2d");
   canvas.width = window.innerWidth;
   canvas.height = window.innerHeight;
 
-  // PC: マウスホイールでF値変更
   canvas.addEventListener("wheel", e => {
     e.preventDefault();
     scale += e.deltaY * -0.001;
     updateFValue();
   }, { passive: false });
 
-  // スマホ: ピンチ操作でF値変更
-  canvas.addEventListener("touchstart", e => {
-    if (e.touches.length === 2) {
-      lastPinchDist = dist(e.touches[0], e.touches[1]);
-    }
-  });
-
+  canvas.addEventListener("touchstart", e => { if (e.touches.length === 2) lastPinchDist = dist(e.touches[0], e.touches[1]); });
   canvas.addEventListener("touchmove", e => {
     e.preventDefault();
     if (e.touches.length === 2) {
@@ -175,165 +163,131 @@ function updateFValue() {
   fvalText.innerText = `F値: ${fValue.toFixed(1)}`;
 }
 
-function dist(p1, p2) {
-  return Math.sqrt(Math.pow(p1.clientX - p2.clientX, 2) + Math.pow(p1.clientY - p2.clientY, 2));
-}
+function dist(p1, p2) { return Math.sqrt(Math.pow(p1.clientX - p2.clientX, 2) + Math.pow(p1.clientY - p2.clientY, 2)); }
 
-// --- 描画とBPM計算 ---
+let lastBpmTime = 0;
 function draw() {
-  // アスペクト比を保って映像を中央に描画
   const videoRatio = video.videoWidth / video.videoHeight;
   const canvasRatio = canvas.width / canvas.height;
   let drawWidth, drawHeight, startX, startY;
-
-  if (videoRatio > canvasRatio) { // 横長の映像
-    drawHeight = canvas.height;
-    drawWidth = drawHeight * videoRatio;
-    startX = (canvas.width - drawWidth) / 2;
-    startY = 0;
-  } else { // 縦長の映像
-    drawWidth = canvas.width;
-    drawHeight = drawWidth / videoRatio;
-    startY = (canvas.height - drawHeight) / 2;
-    startX = 0;
+  if (videoRatio > canvasRatio) {
+    drawHeight = canvas.height; drawWidth = drawHeight * videoRatio;
+    startX = (canvas.width - drawWidth) / 2; startY = 0;
+  } else {
+    drawWidth = canvas.width; drawHeight = drawWidth / videoRatio;
+    startY = (canvas.height - drawHeight) / 2; startX = 0;
   }
   ctx.drawImage(video, startX, startY, drawWidth, drawHeight);
 
   if (isFlashOn) {
-    // 中央の20x20ピクセルの平均的な赤色を取得
     const frame = ctx.getImageData(canvas.width / 2 - 10, canvas.height / 2 - 10, 20, 20);
     let sumRed = 0;
-    for (let i = 0; i < frame.data.length; i += 4) {
-      sumRed += frame.data[i];
-    }
+    for (let i = 0; i < frame.data.length; i += 4) sumRed += frame.data[i];
     const avgRed = sumRed / (frame.data.length / 4);
     
-    // データが有効な場合のみBPM計算
     if (!isNaN(avgRed)) {
-        redValues.push(avgRed);
-        timestamps.push(Date.now());
+      redHistory.push({ value: avgRed, time: Date.now() });
     }
-
-    // データを5秒分（30fps換算で150フレーム）に制限
-    if (redValues.length > 150) {
-      redValues.shift();
-      timestamps.shift();
-    }
+    if (redHistory.length > 200) redHistory.shift();
     
-    if (redValues.length >= 60) {
-      bpm = calcBPM(redValues, timestamps);
-      if (bpm > 40 && bpm < 200) {
-         bpmText.innerText = `BPM: ${bpm}`;
-      } else {
-         bpmText.innerText = `BPM: ---`;
+    const now = Date.now();
+    if (redHistory.length > 100 && now - lastBpmTime > 1000) {
+      bpmText.innerText = `BPM: 計測中...`;
+      const newBpm = calculateBPM_Autocorrelation(redHistory);
+      if (newBpm > 40 && newBpm < 200) {
+        bpm = newBpm;
+        bpmText.innerText = `BPM: ${bpm}`;
       }
+      lastBpmTime = now;
     }
   }
 
-  // 絞りを表現するUI
   ctx.fillStyle = "rgba(0,0,0,0.8)";
   ctx.beginPath();
   const outerRadius = Math.max(canvas.width, canvas.height);
   ctx.arc(canvas.width / 2, canvas.height / 2, outerRadius, 0, 2 * Math.PI);
-  const innerRadius = 50 * scale; // F値と連動
+  const innerRadius = 50 * scale;
   ctx.arc(canvas.width / 2, canvas.height / 2, innerRadius, 0, 2 * Math.PI, true);
   ctx.fill();
 
   requestAnimationFrame(draw);
 }
 
-// よりロバストなBPM計算アルゴリズム
-function calcBPM(signal, times) {
-    if (signal.length < 2) return 0;
+// --- 新しいBPM計算アルゴリズム (自己相関法) ---
+function calculateBPM_Autocorrelation(history) {
+    const signal = history.map(p => p.value);
+    const times = history.map(p => p.time);
 
-    // 信号を平滑化（移動平均）
-    const smoothed = [];
-    for (let i = 2; i < signal.length - 2; i++) {
-        const avg = (signal[i-2] + signal[i-1] + signal[i] + signal[i+1] + signal[i+2]) / 5;
-        smoothed.push(avg);
-    }
-    const smoothedTimes = times.slice(2, -2);
+    // 1. 信号の平均値を0にする (Detrend)
+    const mean = signal.reduce((a, b) => a + b, 0) / signal.length;
+    const detrendedSignal = signal.map(v => v - mean);
+
+    // 2. サンプリングレートを計算
+    const duration = (times[times.length - 1] - times[0]) / 1000; // in seconds
+    const samplingRate = (times.length - 1) / duration;
+
+    // 3. 自己相関を計算するラグの範囲を決める (40BPMから200BPM)
+    const minLag = Math.floor(samplingRate * (60 / 200)); 
+    const maxLag = Math.ceil(samplingRate * (60 / 40));
     
-    const mean = smoothed.reduce((a, b) => a + b) / smoothed.length;
-    
-    // 平均より高い値を持つ部分でピークを探す
-    const peaks = [];
-    for (let i = 1; i < smoothed.length - 1; i++) {
-        if (smoothed[i] > mean && smoothed[i] > smoothed[i-1] && smoothed[i] > smoothed[i+1]) {
-            peaks.push(smoothedTimes[i]);
+    let bestLag = 0;
+    let maxCorr = 0;
+
+    // 4. 自己相関を計算
+    for (let lag = minLag; lag <= maxLag; lag++) {
+        let corr = 0;
+        for (let i = 0; i < detrendedSignal.length - lag; i++) {
+            corr += detrendedSignal[i] * detrendedSignal[i + lag];
+        }
+        if (corr > maxCorr) {
+            maxCorr = corr;
+            bestLag = lag;
         }
     }
 
-    if (peaks.length < 2) return 0;
+    if (bestLag === 0) return 0;
 
-    const intervals = [];
-    for (let i = 1; i < peaks.length; i++) {
-        intervals.push(peaks[i] - peaks[i-1]);
-    }
-    
-    // 外れ値を除去（メディアンの±50%）
-    intervals.sort((a, b) => a - b);
-    const median = intervals[Math.floor(intervals.length / 2)];
-    const validIntervals = intervals.filter(interval => interval > median * 0.5 && interval < median * 1.5);
-
-    if (validIntervals.length < 1) return 0;
-    
-    const avgInterval = validIntervals.reduce((a, b) => a + b) / validIntervals.length;
-    
-    if (isNaN(avgInterval) || avgInterval === 0) return 0;
-    
-    return Math.round(60000 / avgInterval);
+    // 5. 最も相関の高かったラグからBPMを計算
+    const period = bestLag / samplingRate; // in seconds
+    return Math.round(60 / period);
 }
 
 
-// --- ボタンイベント ---
 flashBtn.addEventListener("click", () => {
-    if (!videoTrack) return;
-    isFlashOn = !isFlashOn;
-    videoTrack.applyConstraints({
-      advanced: [{ torch: isFlashOn }]
-    });
-    flashBtn.style.background = isFlashOn ? "#ffdd59" : "rgba(255, 255, 255, 0.3)";
-    if(isFlashOn) {
-        instructions.style.display = 'none'; // ライトオンで説明を消す
-    }
+  if (!videoTrack) return;
+  isFlashOn = !isFlashOn;
+  redHistory = []; // リセット
+  bpmText.innerText = 'BPM: ---';
+  videoTrack.applyConstraints({ advanced: [{ torch: isFlashOn }] });
+  flashBtn.style.background = isFlashOn ? "#ffdd59" : "rgba(255, 255, 255, 0.3)";
+  if (isFlashOn) instructions.style.display = 'none';
 });
 
 captureBtn.addEventListener("click", () => {
-  // F値とBPMで明るさを調整する
   const tempCanvas = document.createElement('canvas');
   const tempCtx = tempCanvas.getContext('2d');
-  tempCanvas.width = canvas.width;
-  tempCanvas.height = canvas.height;
-  
-  // 現在の映像をそのまま描画
+  tempCanvas.width = canvas.width; tempCanvas.height = canvas.height;
   tempCtx.drawImage(canvas, 0, 0);
-  
   const imageData = tempCtx.getImageData(0, 0, tempCanvas.width, tempCanvas.height);
   const data = imageData.data;
   
-  // 明るさの調整係数 (BPMが60の時を基準)
-  // F値が小さい（明るい）ほど、BPMが速いほど、写真は暗くなる
-  const currentBpm = (bpm > 40 && bpm < 200) ? bpm : 60; // 不安定なBPM値の場合は60を基準とする
+  const currentBpm = (bpm > 40 && bpm < 200) ? bpm : 60;
   const factor = 2.0 / (fValue * (currentBpm / 60));
 
   for (let i = 0; i < data.length; i += 4) {
-    data[i]   = Math.min(255, data[i] * factor);     // Red
-    data[i+1] = Math.min(255, data[i+1] * factor); // Green
-    data[i+2] = Math.min(255, data[i+2] * factor); // Blue
+    data[i] = Math.min(255, data[i] * factor);
+    data[i+1] = Math.min(255, data[i+1] * factor);
+    data[i+2] = Math.min(255, data[i+2] * factor);
   }
   tempCtx.putImageData(imageData, 0, 0);
 
-  // 画像として保存
   const link = document.createElement('a');
-  link.href = tempCanvas.toDataURL("image/jpeg", 0.9); // JPEG形式で保存
+  link.href = tempCanvas.toDataURL("image/jpeg", 0.9);
   link.download = `heart_camera_f${fValue.toFixed(1)}_bpm${currentBpm}.jpg`;
   link.click();
 });
 
-// アプリケーション開始
 initCamera();
-
 </script>
 </body>
 </html>
