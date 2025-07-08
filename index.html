@@ -138,6 +138,7 @@
   <div id="graph-container"><canvas id="graph"></canvas></div>
   <div id="shutter-button"></div>
   <div id="start-bpm-button">BPM測定</div>
+
 <script>
 (async () => {
   const video = document.getElementById("video");
@@ -179,7 +180,7 @@
     const minF = 1.0, maxF = 16.0;
     fValue = Math.min(maxF, Math.max(minF, newFval));
     fValueText.textContent = fValue.toFixed(1);
-    const size = 300 - ((fValue - 1.0) / 15) * 150; // F値が小さいと円が大きくなる
+    const size = 300 - ((fValue - 1.0) / 15) * 150;
     centerCircle.style.width = `${size}px`;
     centerCircle.style.height = `${size}px`;
   }
@@ -193,7 +194,7 @@
       const dist = Math.hypot(dx, dy);
       if (initialPinch != null) {
         const diff = dist - initialPinch;
-        updateFvalUI(fValue - diff * 0.01); // 指の動きと円の動きを一致させる
+        updateFvalUI(fValue - diff * 0.01);
       }
       initialPinch = dist;
     }
@@ -204,7 +205,6 @@
     measuring = true;
     history = [];
     bpmValueText.textContent = "測定中...";
-
     if (bpmTimer) clearTimeout(bpmTimer);
     bpmTimer = setTimeout(() => {
       measuring = false;
@@ -267,6 +267,10 @@
       </div>
     `;
     gallery.appendChild(entry);
+  });
+
+  albumButton.addEventListener("click", () => {
+    gallery.style.display = gallery.style.display === "flex" ? "none" : "flex";
   });
 
   startBpmButton.addEventListener("click", startBPMMeasurement);
