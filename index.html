@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>心拍数測定アプリ</title>
+  <style>
+    body { font-family: sans-serif; text-align: center; }
+    #bpm { font-size: 2em; margin: 1em; }
+    #start { font-size: 1.2em; }
+    video { width: 80vw; max-width: 400px; margin: 1em auto; border-radius: 10px; }
+  </style>
+</head>
+<body>
+  <h1>心拍数測定</h1>
+  <p>カメラに指を当てて「測定開始」を押してください</p>
+  <video id="video" autoplay playsinline></video>
+  <div>
+    <button id="start">測定開始</button>
+  </div>
+  <div id="bpm">-- BPM</div>
+  <div id="fval">F値: <span id="fnum">2.8</span></div>
+  <script>
+    const video = document.getElementById('video');
+    const bpmDisplay = document.getElementById('bpm');
+    const startBtn = document.getElementById('start');
+    let stream, animationId, data = [];
+
+    async function startCamera() {
+      stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" }, audio: false });
+      video.srcObject = stream;
+    }
+
+    function getFrameBrightness(ctx, w, h) {
+      const frame = ctx.getImageData(0, 0, w, h);
+      let sum = 0;
+      for (let i = 0; i < frame.data.length; i += 4) {
+        // 赤成分だけ使う
+        sum += frame.data[i];
+      }
+      return sum / (frame.data.length / 4);
+    }
+
+    function detectBPM(brightnessArr, fps) {
+      // 簡易ピーク検出
+      let peaks = [];
+      for (let i = 1; i < brightnessArr.length - 1; i++) {
+        if (brightnessArr[i] > brightnessArr[i-1] && brightnessArr[i] > brightnessArr[i+1]) {
+          peaks.push(i);
+        }
+      }
+      if (peaks.length < 2) return null;
+      let intervals = [];
+      for (let i = 1; i < peaks.length; i++) {
+        intervals.push((peaks[i] - peaks[i-1]) / fps);
+      }
+      let avg = intervals.reduce((a, b) => a + b, 0) / intervals.length;
+      return Math.round(60 / avg);
+    }
+
+    function bpmToShutterSpeed(bpm) {
+      // 1分間の心拍数→1拍の間隔（秒）
+      // 例: 60BPM→1秒, 120BPM→0.5秒
+      if (!bpm || bpm <= 0) return null;
+      const sec = 60 / bpm;
+      if (sec >= 1) {
+        return sec.toFixed(2) + ' 秒';
+      } else {
+        return '1/' + Math.round(1 / sec) + ' 秒';
+      }
+    }
+
+    let fNumber = 2.8;
+    const fnumSpan = document.getElementById('fnum');
+    let lastDist = null;
+    // ピンチイン・ピンチアウトでF値を変更
+    video.addEventListener('touchstart', function(e) {
+      if (e.touches.length === 2) {
+        lastDist = Math.abs(e.touches[0].clientX - e.touches[1].clientX);
+      }
+    });
+    video.addEventListener('touchmove', function(e) {
+      if (e.touches.length === 2 && lastDist !== null) {
+        let newDist = Math.abs(e.touches[0].clientX - e.touches[1].clientX);
+        if (Math.abs(newDist - lastDist) > 10) {
+          if (newDist > lastDist) {
+            fNumber = Math.max(1.2, fNumber - 0.2); // ピンチアウトでF値小さく
+          } else {
+            fNumber = Math.min(16, fNumber + 0.2); // ピンチインでF値大きく
+          }
+          fNumber = Math.round(fNumber * 10) / 10;
+          fnumSpan.textContent = fNumber;
+          lastDist = newDist;
+        }
+      }
+    });
+    video.addEventListener('touchend', function(e) {
+      if (e.touches.length < 2) lastDist = null;
+    });
+
+    startBtn.onclick = async () => {
+      bpmDisplay.textContent = "-- BPM";
+      data = [];
+      await startCamera();
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      let w, h, startTime;
+      let fps = 30;
+      let frames = 0;
+      startBtn.disabled = true;
+
+      function capture() {
+        if (!w || !h) {
+          w = video.videoWidth;
+          h = video.videoHeight;
+          canvas.width = w;
+          canvas.height = h;
+        }
+        ctx.drawImage(video, 0, 0, w, h);
+        data.push(getFrameBrightness(ctx, w, h));
+        frames++;
+        if (!startTime) startTime = performance.now();
+        if ((performance.now() - startTime) < 10000) {
+          animationId = requestAnimationFrame(capture);
+        } else {
+          // 測定終了
+          stream.getTracks().forEach(t => t.stop());
+          let bpm = detectBPM(data, fps);
+          if (bpm) {
+            const shutter = bpmToShutterSpeed(bpm);
+            bpmDisplay.textContent = shutter ? `心拍数 = シャッタースピード: ${shutter}` : "測定失敗";
+          } else {
+            bpmDisplay.textContent = "測定失敗";
+          }
+          startBtn.disabled = false;
+        }
+      }
+      capture();
+    };
+  </script>
+</body>
+</html>
