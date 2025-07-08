@@ -1,371 +1,191 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-  <meta charset="UTF-8" />
-  <title>F-Shutter Heart Camera</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-  <style>
-    body { 
-      margin: 0; 
-      overflow: hidden; 
-      background: #000; 
-      color: white; 
-      font-family: monospace, sans-serif;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-    }
-    #canvas { 
-      touch-action: none; 
-      width: 100%;
-      height: 100%;
-      object-fit: cover;
-    }
-    #ui { 
-      position: absolute; 
-      top: 15px; 
-      left: 15px; 
-      z-index: 10; 
-      background: rgba(0,0,0,0.5);
-      padding: 10px;
-      border-radius: 8px;
-    }
-    .ui-item { font-size: 18px; color: white; margin-bottom: 5px; }
-    #bpm { color: #ff4757; font-weight: bold; }
-    #instructions {
-      position: absolute;
-      top: 50%;
-      left: 50%;
-      transform: translate(-50%, -50%);
-      text-align: center;
-      background: rgba(0,0,0,0.7);
-      padding: 15px;
-      border-radius: 10px;
-      z-index: 20;
-      pointer-events: none;
-    }
-    .button-container {
-      position: absolute;
-      bottom: 20px;
-      left: 50%;
-      transform: translateX(-50%);
-      display: flex;
-      gap: 15px;
-      z-index: 10;
-    }
-    .button-container button {
-      width: 60px;
-      height: 60px;
-      border-radius: 50%;
-      border: 4px solid white;
-      background: rgba(255, 255, 255, 0.3);
-      font-size: 28px;
-      cursor: pointer;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-    }
-    #capture-btn {
-      background: #ff4757;
-    }
-    #gallery {
-      position: absolute;
-      bottom: 100px;
-      left: 0;
-      width: 100%;
-      height: 90px;
-      background: rgba(0,0,0,0.4);
-      padding: 5px;
-      box-sizing: border-box;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      overflow-x: auto;
-      overflow-y: hidden;
-      z-index: 10;
-    }
-    #gallery a {
-      height: 100%;
-      display: inline-block;
-    }
-    #gallery img {
-      height: 100%;
-      border-radius: 5px;
-      border: 2px solid white;
-      cursor: pointer;
-      transition: transform 0.1s ease;
-    }
-    #gallery img:hover {
-      transform: scale(1.05);
-    }
-    #graph {
-      position: absolute;
-      top: 0;
-      right: 0;
-      width: 200px;
-      height: 100px;
-      background: rgba(0, 0, 0, 0.5);
-      z-index: 20;
-    }
-  </style>
+<meta charset="UTF-8">
+<title>F-Shutter Heart Camera</title>
+<meta name="viewport" content="width=device-width,initial-scale=1.0,user-scalable=no">
+<style>
+  body{margin:0;overflow:hidden;background:#000;color:#fff;font-family:monospace;}
+  video, canvas{position:absolute;top:0;left:0;width:100%;height:100%;object-fit:cover;}
+  #graph{position:absolute;top:0;right:0;width:200px;height:100px;background:rgba(0,0,0,0.5);z-index:10;}
+  #ui{position:absolute;top:15px;left:15px;background:rgba(0,0,0,0.5);padding:10px;border-radius:8px;z-index:10;}
+  .ui-item{font-size:18px;margin-bottom:5px;}
+  #instructions{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(0,0,0,0.7);padding:15px;border-radius:10px;text-align:center;z-index:10;}
+  .button-container{position:absolute;bottom:20px;left:50%;transform:translateX(-50%);display:flex;gap:15px;z-index:10;}
+  button{width:60px;height:60px;border-radius:50%;border:4px solid white;background:rgba(255,255,255,0.3);font-size:28px;cursor:pointer;}
+  #capture-btn{background:#ff4757;}
+  #gallery{position:absolute;bottom:100px;left:0;width:100%;height:90px;background:rgba(0,0,0,0.4);display:flex;align-items:center;overflow-x:auto;gap:8px;box-sizing:border-box;z-index:10;}
+  #gallery img{height:100%;border:2px solid white;border-radius:5px;cursor:pointer;transition:transform .1s;}
+  #gallery img:hover{transform:scale(1.05);}
+</style>
 </head>
 <body>
-  <div id="ui">
-    <div id="bpm" class="ui-item">BPM: ---</div>
-    <div id="fval-display" class="ui-item">F値: 4.0</div>
-  </div>
-  <div id="instructions">
-    <p>背面のカメラとライトを<br>指でそっと覆ってください</p>
-    <p>↓</p>
-    <p>下のライトボタン(💡)を押して<br>計測を開始します</p>
-  </div>
+  <video id="video" playsinline autoplay muted></video>
   <canvas id="canvas"></canvas>
   <canvas id="graph"></canvas>
-  <div id="gallery"></div>
+
+  <div id="ui">
+    <div id="bpm" class="ui-item">BPM: ---</div>
+    <div id="fval" class="ui-item">F値: 4.0</div>
+  </div>
+  <div id="instructions">
+    <p>背面カメラとライトを指で覆ってください</p><p>↓</p><p>💡 を押して計測開始</p>
+  </div>
   <div class="button-container">
     <button id="flash-btn">💡</button>
     <button id="capture-btn">📸</button>
   </div>
+  <div id="gallery"></div>
+
 <script>
-let video, canvas, ctx, graphCanvas, graphCtx;
-let videoTrack;
-let fValue = 4.0;
-let bpm = 0;
-let redHistory = [];
-let lastPinchDist = 0;
-let isFlashOn = false;
-let isMeasuring = false;
-let scale = 1.0;
+(async()=>{
+  const video = document.getElementById("video");
+  const canvas = document.getElementById("canvas");
+  const graph = document.getElementById("graph");
+  const bpmText = document.getElementById("bpm");
+  const fvalText = document.getElementById("fval");
+  const instr = document.getElementById("instructions");
+  const flashBtn = document.getElementById("flash-btn");
+  const capBtn = document.getElementById("capture-btn");
+  const gallery = document.getElementById("gallery");
+  const ctx = canvas.getContext("2d");
+  const gctx = graph.getContext("2d");
 
-const bpmText = document.getElementById("bpm");
-const fvalText = document.getElementById("fval-display");
-const instructions = document.getElementById("instructions");
-const flashBtn = document.getElementById("flash-btn");
-const captureBtn = document.getElementById("capture-btn");
-
-async function initCamera() {
-  video = document.createElement("video");
-  video.setAttribute("autoplay", true);
-  video.setAttribute("playsinline", true);
+  let videoTrack, scale=1,fValue=4,bpm=0,avgBpm=75;
+  let measuring=false, history=[],lastPinch=0;
 
   try {
-    const stream = await navigator.mediaDevices.getUserMedia({ 
-      video: { 
-        facingMode: "environment",
-        width: { ideal: 1280 },
-        height: { ideal: 720 }
-      } 
-    });
+    const stream = await navigator.mediaDevices.getUserMedia({video:{facingMode:"environment"}});
     video.srcObject = stream;
-    const tracks = stream.getVideoTracks();
-    if (tracks.length > 0) videoTrack = tracks[0];
-  } catch (err) {
-    alert("カメラの起動に失敗しました。\n" + err);
+    videoTrack = stream.getVideoTracks()[0];
+  } catch(err){
+    alert("カメラ起動失敗："+err);
     return;
   }
 
-  video.addEventListener("loadeddata", () => {
-    setupCanvas();
-    requestAnimationFrame(draw);
+  function resize(){
+    canvas.width=video.videoWidth;
+    canvas.height=video.videoHeight;
+    graph.width=200;graph.height=100;
+  }
+  video.addEventListener("loadeddata",()=>{
+    resize();
+    requestAnimationFrame(loop);
   });
-}
+  window.addEventListener("resize", resize);
 
-function setupCanvas() {
-  canvas = document.getElementById("canvas");
-  ctx = canvas.getContext("2d");
-  graphCanvas = document.getElementById("graph");
-  graphCtx = graphCanvas.getContext("2d");
+  function loop(){
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+    ctx.filter = "none";
+    ctx.globalAlpha = 1;
+    ctx.drawImage(video,0,0,canvas.width,canvas.height);
 
-  canvas.width = window.innerWidth;
-  canvas.height = window.innerHeight;
-  graphCanvas.width = 200;
-  graphCanvas.height = 100;
-
-  canvas.addEventListener("wheel", e => {
-    e.preventDefault();
-    scale += e.deltaY * -0.001;
-    updateFValue();
-  }, { passive: false });
-
-  canvas.addEventListener("touchstart", e => { if (e.touches.length === 2) lastPinchDist = dist(e.touches[0], e.touches[1]); });
-  canvas.addEventListener("touchmove", e => {
-    e.preventDefault();
-    if (e.touches.length === 2) {
-      const currentDist = dist(e.touches[0], e.touches[1]);
-      scale += (currentDist - lastPinchDist) * 0.005;
-      lastPinchDist = currentDist;
-      updateFValue();
+    if(measuring){
+      const s = 100;
+      const x = canvas.width/2 - s/2, y = canvas.height/2 - s/2;
+      const dat = ctx.getImageData(x,y,s,s).data;
+      let sum=0;
+      for(let i=0;i<dat.length;i+=4) sum += dat[i];
+      history.push({v: sum/(dat.length/4),t:Date.now()});
+      drawGraph();
     }
-  }, { passive: false });
-}
 
-function updateFValue() {
-  scale = Math.max(0.25, Math.min(scale, 4.0));
-  fValue = 16.0 / scale / 4.0;
-  fvalText.innerText = `F値: ${fValue.toFixed(1)}`;
-}
+    const bright = bpm > avgBpm ? 0.7 : 1.3;
+    ctx.globalAlpha = (4/fValue)*(measuring?1:bright);
 
-function dist(p1, p2) {
-  return Math.hypot(p1.clientX - p2.clientX, p1.clientY - p2.clientY);
-}
-
-function draw() {
-  const videoRatio = video.videoWidth / video.videoHeight;
-  const canvasRatio = canvas.width / canvas.height;
-  let drawWidth, drawHeight, startX, startY;
-  if (videoRatio > canvasRatio) {
-    drawHeight = canvas.height; drawWidth = drawHeight * videoRatio;
-    startX = (canvas.width - drawWidth) / 2; startY = 0;
-  } else {
-    drawWidth = canvas.width; drawHeight = drawWidth / videoRatio;
-    startY = (canvas.height - drawHeight) / 2; startX = 0;
+    requestAnimationFrame(loop);
   }
 
-  ctx.drawImage(video, startX, startY, drawWidth, drawHeight);
-
-  if (isMeasuring) {
-    const frame = ctx.getImageData(canvas.width / 2 - 50, canvas.height / 2 - 50, 100, 100);
-    let sumRed = 0;
-    for (let i = 0; i < frame.data.length; i += 4) {
-      sumRed += frame.data[i];
-    }
-    const avgRed = sumRed / (frame.data.length / 4);
-    if (!isNaN(avgRed)) {
-      redHistory.push({ value: avgRed, time: Date.now() });
-    }
-    drawGraph();
+  function drawGraph(){
+    const arr = history.slice(-200).map(o=>o.v);
+    const min=Math.min(...arr), max=Math.max(...arr);
+    gctx.clearRect(0,0,200,100);
+    gctx.beginPath();
+    arr.forEach((v,i)=>{
+      const x=i/arr.length*200;
+      const y=100-((v-min)/(max-min+1e-6))*100;
+      i===0?gctx.moveTo(x,y):gctx.lineTo(x,y);
+    });
+    gctx.strokeStyle="#0f8";gctx.lineWidth=1.5;gctx.stroke();
   }
 
-  ctx.fillStyle = "rgba(0,0,0,0.8)";
-  ctx.beginPath();
-  const outerRadius = Math.max(canvas.width, canvas.height);
-  ctx.arc(canvas.width / 2, canvas.height / 2, outerRadius, 0, 2 * Math.PI);
-  const innerRadius = 50 * scale;
-  ctx.arc(canvas.width / 2, canvas.height / 2, innerRadius, 0, 2 * Math.PI, true);
-  ctx.fill();
+  function calcBPM(){
+    const h=history;
+    if(h.length<60) return 0;
+    const vals=h.map(o=>o.v), times=h.map(o=>o.t);
+    const dur=(times[times.length-1]-times[0])/1000;
+    if(dur<5) return 0;
+    const mean=vals.reduce((a,b)=>a+b)/vals.length;
+    const cen=vals.map(v=>v-mean);
+    const std=Math.sqrt(cen.map(v=>v*v).reduce((a,b)=>a+b)/cen.length);
+    if(std<0.5) return 0;
 
-  requestAnimationFrame(draw);
-}
-
-function drawGraph() {
-  const values = redHistory.slice(-200).map(p => p.value);
-  const max = Math.max(...values);
-  const min = Math.min(...values);
-
-  graphCtx.clearRect(0, 0, graphCanvas.width, graphCanvas.height);
-  graphCtx.beginPath();
-  values.forEach((v, i) => {
-    const x = (i / values.length) * graphCanvas.width;
-    const y = graphCanvas.height - ((v - min) / (max - min + 1e-6)) * graphCanvas.height;
-    if (i === 0) graphCtx.moveTo(x, y);
-    else graphCtx.lineTo(x, y);
-  });
-  graphCtx.strokeStyle = "#00ff88";
-  graphCtx.lineWidth = 1.5;
-  graphCtx.stroke();
-}
-
-function calculateBPM_FFT(history) {
-  if (history.length < 64) return 0;
-
-  const signal = history.map(p => p.value);
-  const times = history.map(p => p.time);
-  const duration = (times[times.length - 1] - times[0]) / 1000;
-
-  const mean = signal.reduce((a, b) => a + b, 0) / signal.length;
-  const centered = signal.map(v => v - mean);
-  const stdDev = Math.sqrt(centered.map(v => v ** 2).reduce((a, b) => a + b) / centered.length);
-
-  if (stdDev < 0.5) return 0; // 信号弱すぎ
-
-  const n = signal.length;
-  const re = new Array(n).fill(0), im = new Array(n).fill(0);
-
-  for (let k = 0; k < n; k++) {
-    for (let t = 0; t < n; t++) {
-      const angle = (2 * Math.PI * t * k) / n;
-      re[k] += centered[t] * Math.cos(angle);
-      im[k] -= centered[t] * Math.sin(angle);
-    }
-  }
-
-  const power = re.map((r, i) => Math.sqrt(r ** 2 + im[i] ** 2));
-  const freqResolution = 1 / duration;
-  const bpmList = power.map((p, i) => ({ bpm: (i * freqResolution) * 60, power: p }));
-
-  const filtered = bpmList.filter(p => p.bpm >= 40 && p.bpm <= 200);
-  if (filtered.length === 0) return 0;
-
-  const peak = filtered.reduce((a, b) => a.power > b.power ? a : b);
-  return Math.round(peak.bpm);
-}
-
-flashBtn.addEventListener("click", () => {
-  if (!videoTrack || isMeasuring) return;
-
-  isFlashOn = !isFlashOn;
-  videoTrack.applyConstraints({ advanced: [{ torch: isFlashOn }] });
-  flashBtn.style.background = isFlashOn ? "#ffdd59" : "rgba(255, 255, 255, 0.3)";
-
-  if (isFlashOn) {
-    instructions.style.display = 'none';
-    isMeasuring = true;
-    redHistory = [];
-    bpmText.innerText = 'BPM: 計測中...';
-    flashBtn.disabled = true;
-
-    setTimeout(() => {
-      isMeasuring = false;
-      flashBtn.disabled = false;
-      const result = calculateBPM_FFT(redHistory);
-      if (result < 40 || result > 200 || isNaN(result)) {
-        bpmText.innerText = "BPM: 測定失敗";
-        bpm = 0;
-      } else {
-        bpm = result;
-        bpmText.innerText = `BPM: ${bpm}`;
+    const n=cen.length;
+    const re=new Array(n).fill(0), im=new Array(n).fill(0);
+    for(let k=0;k<n;k++)
+      for(let t=0;t<n;t++){
+        const ang=2*Math.PI*t*k/n;
+        re[k]+=cen[t]*Math.cos(ang);
+        im[k]-=cen[t]*Math.sin(ang);
       }
-    }, 8000);
-  } else {
-    bpmText.innerText = 'BPM: ---';
-    isMeasuring = false;
+    const power=re.map((r,i)=>Math.hypot(r,im[i]));
+    const freqRes=1/dur;
+    const peaks=power.map((p,i)=>({bpm:i*freqRes*60,power:p}))
+      .filter(o=>o.bpm>=40&&o.bpm<=200);
+    if(!peaks.length) return 0;
+    const peak=peaks.reduce((a,b)=>a.power>b.power?a:b);
+    return Math.round(peak.bpm);
   }
-});
 
-captureBtn.addEventListener("click", () => {
-  const tempCanvas = document.createElement('canvas');
-  const tempCtx = tempCanvas.getContext('2d');
-  tempCanvas.width = canvas.width; 
-  tempCanvas.height = canvas.height;
-  tempCtx.drawImage(canvas, 0, 0);
+  flashBtn.onclick = async ()=>{
+    if(!videoTrack||measuring) return;
+    measuring = true; history=[]; instr.style.display="none";
+    bpmText.innerText="BPM: 計測中...";
+    const cap = await videoTrack.applyConstraints({advanced:[{torch:true}]});
+    setTimeout(async()=>{
+      measuring=false;
+      await videoTrack.applyConstraints({advanced:[{torch:false}]});
+      const r = calcBPM();
+      if(r<40||r>200) bpmText.innerText="BPM: 測定失敗";
+      else { bpm=r; avgBpm=bpm; bpmText.innerText=`BPM: ${bpm}`; }
+    },8000);
+  };
 
-  const imageData = tempCtx.getImageData(0, 0, tempCanvas.width, tempCanvas.height);
-  const data = imageData.data;
+  capBtn.onclick = ()=>{
+    const tmp = document.createElement("canvas");
+    tmp.width=canvas.width; tmp.height=canvas.height;
+    const tc=tmp.getContext("2d");
+    tc.globalAlpha = ctx.globalAlpha;
+    tc.drawImage(canvas,0,0);
+    const url=tmp.toDataURL("image/jpeg",0.9);
+    const a=document.createElement("a"),img=document.createElement("img");
+    a.href=url; a.download=`f${fValue.toFixed(1)}_bpm${bpm||avgBpm}.jpg`;
+    img.src=url; a.appendChild(img); gallery.appendChild(a);
+    gallery.scrollLeft=gallery.scrollWidth;
+  };
 
-  const currentBpm = (bpm > 40 && bpm < 200) ? bpm : 75;
-  const factor = 2.0 / (fValue * (currentBpm / 60));
+  canvas.onwheel = e=>{
+    e.preventDefault();
+    scale += -e.deltaY*0.001;
+    scale=Math.max(0.25,Math.min(scale,4));
+    fValue = 16/scale/4;
+    fvalText.innerText=`F値: ${fValue.toFixed(1)}`;
+  };
 
-  for (let i = 0; i < data.length; i += 4) {
-    data[i] = Math.min(255, data[i] * factor);
-    data[i+1] = Math.min(255, data[i+1] * factor);
-    data[i+2] = Math.min(255, data[i+2] * factor);
-  }
-  tempCtx.putImageData(imageData, 0, 0);
-
-  const dataURL = tempCanvas.toDataURL("image/jpeg", 0.9);
-  const gallery = document.getElementById('gallery');
-  const link = document.createElement('a');
-  link.href = dataURL;
-  link.download = `heart_camera_f${fValue.toFixed(1)}_bpm${currentBpm}.jpg`;
-
-  const thumbImg = document.createElement('img');
-  thumbImg.src = dataURL;
-  link.appendChild(thumbImg);
-  gallery.appendChild(link);
-  gallery.scrollLeft = gallery.scrollWidth;
-});
-
-initCamera();
+  canvas.addEventListener("touchstart",e=>{
+    if(e.touches.length===2) lastPinch = Math.hypot(e.touches[0].clientX-e.touches[1].clientX, e.touches[0].clientY-e.touches[1].clientY);
+  });
+  canvas.addEventListener("touchmove",e=>{
+    if(e.touches.length===2){
+      const d = Math.hypot(e.touches[0].clientX-e.touches[1].clientX, e.touches[0].clientY-e.touches[1].clientY);
+      scale += (d-lastPinch)*0.005;
+      lastPinch = d;
+      scale=Math.max(0.25,Math.min(scale,4));
+      fValue = 16/scale/4;
+      fvalText.innerText=`F値: ${fValue.toFixed(1)}`;
+    }
+  });
+})();
 </script>
 </body>
 </html>
