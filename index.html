@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no" />
-<title>F値＋BPMカメラ</title>
+<title>F値＋BPMカメラ（簡易版）</title>
 <style>
   html, body {
     margin: 0; padding: 0; height: 100%;
@@ -17,53 +17,45 @@
     height: 100%;
     position: relative;
   }
-  /* 共通ボタン */
   button {
     background: #222;
-    border: 2px solid #fff;
+    border: 2px solid #0f8;
     border-radius: 8px;
-    color: #fff;
+    color: #0f8;
     font-size: 18px;
     padding: 10px 20px;
     cursor: pointer;
     user-select: none;
   }
   button:active {
-    background: #555;
+    background: #0a5;
   }
-  /* --- F値設定画面 --- */
-  #fvalue-screen {
+  #fvalue-screen, #bpm-screen, #camera-screen {
     position: absolute;
     width: 100%;
     height: 100%;
+    background: #111;
     display: flex;
     flex-direction: column;
     justify-content: center;
     align-items: center;
-    background: #111;
   }
   #fvalue-circle {
-    width: 220px;
-    height: 220px;
     border: 4px solid #0f8;
     border-radius: 50%;
-    position: relative;
-    touch-action: none;
-    display: flex;
-    justify-content: center;
-    align-items: center;
+    margin: 20px 0;
+    transition: width 0.3s ease, height 0.3s ease;
+    pointer-events: none;
     user-select: none;
   }
   #fvalue-text {
     font-size: 48px;
     font-weight: bold;
-    pointer-events: none;
-    user-select: none;
+    text-align: center;
   }
-  #fvalue-instruction {
-    margin: 20px 0 30px 0;
-    font-size: 18px;
-    color: #0f8;
+  #fvalue-slider {
+    width: 60%;
+    max-width: 320px;
   }
   #next-btn {
     margin-top: 30px;
@@ -71,62 +63,25 @@
     border-color: #0a5;
     color: #000;
   }
-
-  /* --- BPM測定画面 --- */
-  #bpm-screen {
-    position: absolute;
-    width: 100%;
-    height: 100%;
-    background: #111;
-    display: none;
-    flex-direction: column;
-    align-items: center;
-    padding-top: 50px;
-    user-select: none;
-  }
-  #bpm-status {
-    font-size: 20px;
-    margin-bottom: 20px;
-    color: #0f8;
-  }
-  #bpm-start-btn {
-    font-size: 20px;
-    padding: 12px 30px;
-    background: #0f8;
-    border-color: #0a5;
-    color: #000;
-    cursor: pointer;
-  }
-  #bpm-graph {
-    width: 300px;
-    height: 120px;
-    background: #000;
+  #bpm-input {
+    font-size: 24px;
+    width: 100px;
+    text-align: center;
     border: 2px solid #0f8;
-    margin-top: 25px;
-  }
-  #bpm-info {
-    margin-top: 12px;
-    font-size: 16px;
+    border-radius: 6px;
+    background: #222;
     color: #0f8;
   }
   #bpm-next-btn {
-    margin-top: 40px;
+    margin-top: 30px;
     background: #0f8;
     border-color: #0a5;
     color: #000;
-    font-size: 20px;
-    padding: 10px 30px;
-    display: none;
   }
-
-  /* --- 撮影画面 --- */
   #camera-screen {
-    position: absolute;
-    width: 100%;
-    height: 100%;
-    background: black;
     display: none;
-    user-select: none;
+    background: black;
+    position: relative;
   }
   #video, #photo-canvas {
     position: absolute;
@@ -141,8 +96,6 @@
     width: 100%;
     display: flex;
     justify-content: center;
-    gap: 30px;
-    pointer-events: auto;
   }
   #capture-btn {
     width: 70px;
@@ -155,8 +108,6 @@
     cursor: pointer;
     user-select: none;
   }
-
-  /* --- アルバムUI --- */
   #album {
     position: absolute;
     bottom: 15px;
@@ -202,32 +153,28 @@
   .photo-info div {
     line-height: 1.1;
   }
-
 </style>
 </head>
 <body>
 <div id="app">
 
   <!-- F値設定画面 -->
-  <div id="fvalue-screen">
-    <div id="fvalue-circle" aria-label="F値設定UI" role="slider" aria-valuemin="2" aria-valuemax="18" aria-valuenow="10" tabindex="0">
-      <div id="fvalue-text">10</div>
-    </div>
-    <div id="fvalue-instruction">ピンチイン・アウトでF値を調整してください</div>
+  <div id="fvalue-screen" role="main" aria-label="F値設定画面">
+    <div id="fvalue-text" aria-live="polite">F値: 10</div>
+    <div id="fvalue-circle"></div>
+    <input type="range" id="fvalue-slider" min="2" max="18" step="0.1" value="10" aria-label="F値スライダー" />
     <button id="next-btn" aria-label="次へ">次へ</button>
   </div>
 
   <!-- BPM測定画面 -->
-  <div id="bpm-screen" role="main" aria-live="polite">
-    <div id="bpm-status">BPM: ---</div>
-    <button id="bpm-start-btn">💡 ライトを押して計測開始</button>
-    <canvas id="bpm-graph"></canvas>
-    <div id="bpm-info">画面にライトを当てて指で覆ってください</div>
-    <button id="bpm-next-btn">次へ</button>
+  <div id="bpm-screen" role="main" aria-label="BPM測定画面" style="display:none;">
+    <div>BPM（シャッタースピード）を入力してください</div>
+    <input type="number" id="bpm-input" min="40" max="180" value="80" aria-label="BPM入力" />
+    <button id="bpm-next-btn" aria-label="次へ">次へ</button>
   </div>
 
   <!-- 撮影画面 -->
-  <div id="camera-screen" role="main">
+  <div id="camera-screen" role="main" aria-label="撮影画面">
     <video id="video" autoplay muted playsinline></video>
     <canvas id="photo-canvas"></canvas>
     <div id="capture-controls">
@@ -235,7 +182,6 @@
     </div>
     <div id="album" aria-live="polite" aria-label="撮影した写真のアルバム">
       <h3>アルバム</h3>
-      <!-- ここに写真が追加される -->
     </div>
   </div>
 
@@ -243,26 +189,22 @@
 
 <script>
 (async () => {
-  // --- 定数・状態 ---
+  // 定数・状態
   const FVAL_MIN = 2;
   const FVAL_MAX = 18;
-  let fValue = 10; // 初期値
-  let bpm = 0;
-  let avgBpm = 80;
-  let measuring = false;
-  let bpmHistory = [];
+  let fValue = 10;
+  let bpm = 80;
+  let albumPhotos = [];
 
   // DOM参照
   const fvalueScreen = document.getElementById("fvalue-screen");
   const bpmScreen = document.getElementById("bpm-screen");
   const cameraScreen = document.getElementById("camera-screen");
-  const fvalueCircle = document.getElementById("fvalue-circle");
   const fvalueText = document.getElementById("fvalue-text");
+  const fvalueCircle = document.getElementById("fvalue-circle");
+  const fvalueSlider = document.getElementById("fvalue-slider");
   const nextBtn = document.getElementById("next-btn");
-  const bpmStatus = document.getElementById("bpm-status");
-  const bpmStartBtn = document.getElementById("bpm-start-btn");
-  const bpmGraph = document.getElementById("bpm-graph");
-  const bpmInfo = document.getElementById("bpm-info");
+  const bpmInput = document.getElementById("bpm-input");
   const bpmNextBtn = document.getElementById("bpm-next-btn");
   const video = document.getElementById("video");
   const photoCanvas = document.getElementById("photo-canvas");
@@ -270,167 +212,145 @@
   const album = document.getElementById("album");
 
   const photoCtx = photoCanvas.getContext("2d");
-  const bpmCtx = bpmGraph.getContext("2d");
 
-  // カメラストリーム取得
+  // カメラ起動
   let videoStream;
-  let videoTrack;
-
   try {
     videoStream = await navigator.mediaDevices.getUserMedia({video:{facingMode:"environment"}});
     video.srcObject = videoStream;
-    videoTrack = videoStream.getVideoTracks()[0];
   } catch(e) {
-    alert("カメラ起動に失敗しました：" + e);
-    return;
+    alert("カメラ起動に失敗しました:" + e);
   }
 
-  // --- F値設定画面処理 ---
-  let lastPinchDist = 0;
-  function updateFValueText(){
-    fvalueText.textContent = fValue.toFixed(1);
-    fvalueCircle.setAttribute("aria-valuenow", fValue.toFixed(1));
-    // 円の大きさを変化（レンズ絞りイメージ）
-    // 2→大きく 18→小さく (逆に見やすいように調整)
-    let size = 180 - (fValue - FVAL_MIN) / (FVAL_MAX - FVAL_MIN) * 100;
+  // F値スライダー連動
+  function updateFValueUI(val){
+    fValue = Math.min(FVAL_MAX, Math.max(FVAL_MIN, val));
+    fvalueText.textContent = `F値: ${fValue.toFixed(1)}`;
+    // 円の大きさ：小さいF値ほど大きく（絞り開放イメージ）
+    // サイズ範囲120px〜220px
+    let size = 220 - ((fValue - FVAL_MIN) / (FVAL_MAX - FVAL_MIN)) * 100;
     size = Math.min(220, Math.max(120, size));
     fvalueCircle.style.width = size + "px";
     fvalueCircle.style.height = size + "px";
+    // モヤフィルター（小さいF値ほど強いモヤ）
+    // ここでは円の透明度で表現
+    let opacity = 0.7 - (fValue - FVAL_MIN)/(FVAL_MAX - FVAL_MIN)*0.6;
+    opacity = Math.min(0.7, Math.max(0.1, opacity));
+    fvalueCircle.style.background = `rgba(0,255,136,${opacity})`;
   }
-  updateFValueText();
+  updateFValueUI(fvalueSlider.value);
 
-  fvalueCircle.addEventListener("touchstart", (e) => {
-    if(e.touches.length === 2){
-      lastPinchDist = Math.hypot(
-        e.touches[0].clientX - e.touches[1].clientX,
-        e.touches[0].clientY - e.touches[1].clientY
-      );
-    }
-  });
-  fvalueCircle.addEventListener("touchmove", (e) => {
-    if(e.touches.length === 2){
-      const dist = Math.hypot(
-        e.touches[0].clientX - e.touches[1].clientX,
-        e.touches[0].clientY - e.touches[1].clientY
-      );
-      let delta = dist - lastPinchDist;
-      lastPinchDist = dist;
-      // deltaが正ならピンチアウト(拡大) → F値小さく（モヤ増える）
-      // deltaが負ならピンチイン(縮小) → F値大きく（モヤ減る）
-      fValue -= delta * 0.02;
-      fValue = Math.min(FVAL_MAX, Math.max(FVAL_MIN, fValue));
-      updateFValueText();
-      e.preventDefault();
-    }
-  });
-  // キーボード操作も少し対応（上下キー）
-  fvalueCircle.addEventListener("keydown", (e) => {
-    if(e.key === "ArrowUp"){
-      fValue = Math.max(FVAL_MIN, fValue - 0.2);
-      updateFValueText();
-      e.preventDefault();
-    }
-    if(e.key === "ArrowDown"){
-      fValue = Math.min(FVAL_MAX, fValue + 0.2);
-      updateFValueText();
-      e.preventDefault();
-    }
+  fvalueSlider.addEventListener("input", e => {
+    updateFValueUI(e.target.value);
   });
 
-  nextBtn.onclick = () => {
-    // F値決定してBPM測定画面へ
+  // 次へボタンでBPM入力画面へ
+  nextBtn.addEventListener("click", () => {
     fvalueScreen.style.display = "none";
     bpmScreen.style.display = "flex";
-  };
+    bpmInput.value = 80;
+  });
 
-  // --- BPM測定画面処理 ---
-  let bpmMeasuring = false;
-  let bpmMeasureStart = 0;
-  const BPM_MEASURE_DURATION = 8000;
-  bpmGraph.width = 300;
-  bpmGraph.height = 120;
+  // BPM入力→次へで撮影画面へ
+  bpmNextBtn.addEventListener("click", () => {
+    let val = parseInt(bpmInput.value, 10);
+    if(isNaN(val) || val < 40 || val > 180){
+      alert("BPMは40〜180の数値で入力してください");
+      return;
+    }
+    bpm = val;
+    bpmScreen.style.display = "none";
+    cameraScreen.style.display = "block";
+    startCamera();
+  });
 
-  function drawBPMGraph(){
-    const arr = bpmHistory.slice(-200).map(o => o.v);
-    if(arr.length === 0) return;
-    const min = Math.min(...arr);
-    const max = Math.max(...arr);
-    bpmCtx.clearRect(0,0,bpmGraph.width,bpmGraph.height);
-    bpmCtx.beginPath();
-    arr.forEach((v,i) => {
-      let x = (i/arr.length)*bpmGraph.width;
-      let y = bpmGraph.height - ((v - min) / (max - min + 1e-6))*bpmGraph.height;
-      i === 0 ? bpmCtx.moveTo(x,y) : bpmCtx.lineTo(x,y);
+  // 撮影画面のキャンバスサイズ調整
+  function resizeCanvas(){
+    photoCanvas.width = video.videoWidth;
+    photoCanvas.height = video.videoHeight;
+    photoCanvas.style.width = video.clientWidth + "px";
+    photoCanvas.style.height = video.clientHeight + "px";
+  }
+
+  // 撮影時のフィルター計算
+  function applyFilters(ctx, width, height){
+    // F値によるモヤ(ぼかしと明度低下)
+    // F値小さいほどぼかし強く、暗く
+    // 簡易的にcanvasのglobalAlphaで調整（ぼかしは簡単にできないため）
+    let blurAmount = (FVAL_MAX - fValue) / (FVAL_MAX - FVAL_MIN) * 4; // 最大4pxぼかし想定
+    let brightnessAdjust = 1 - ((FVAL_MAX - fValue) / (FVAL_MAX - FVAL_MIN)) * 0.3; // 0.7〜1の明度
+    ctx.filter = `blur(${blurAmount}px) brightness(${brightnessAdjust})`;
+
+    // BPMによる明るさ補正
+    // BPM80基準
+    if(bpm < 60){
+      let brightFactor = 1 + (60 - bpm) * 0.02; // 最大 +0.4
+      ctx.filter += ` brightness(${brightFactor})`;
+    } else if(bpm > 100){
+      let darkFactor = 1 - (bpm - 100) * 0.02; // 最大 0.6
+      ctx.filter += ` brightness(${darkFactor})`;
+    }
+  }
+
+  // カメラ開始
+  function startCamera(){
+    video.play();
+    video.addEventListener("loadedmetadata", () => {
+      resizeCanvas();
     });
-    bpmCtx.strokeStyle = "#0f8";
-    bpmCtx.lineWidth = 2;
-    bpmCtx.stroke();
   }
 
-  function calcBPMFromHistory(){
-    if(bpmHistory.length < 60) return 0;
-    const vals = bpmHistory.map(o=>o.v);
-    const times = bpmHistory.map(o=>o.t);
-    const dur = (times[times.length-1] - times[0])/1000;
-    if(dur < 5) return 0;
-    const mean = vals.reduce((a,b)=>a+b)/vals.length;
-    const cen = vals.map(v => v-mean);
-    const std = Math.sqrt(cen.map(v=>v*v).reduce((a,b)=>a+b)/cen.length);
-    if(std < 0.5) return 0;
-
-    const n = cen.length;
-    const re = new Array(n).fill(0), im = new Array(n).fill(0);
-    for(let k=0;k<n;k++){
-      for(let t=0;t<n;t++){
-        const ang = (2*Math.PI*t*k)/n;
-        re[k] += cen[t]*Math.cos(ang);
-        im[k] -= cen[t]*Math.sin(ang);
-      }
+  // 撮影処理
+  captureBtn.addEventListener("click", () => {
+    if(video.videoWidth === 0 || video.videoHeight === 0) {
+      alert("カメラ準備中です。しばらく待ってください");
+      return;
     }
-    const power = re.map((r,i) => Math.hypot(r,im[i]));
-    const freqRes = 1/dur;
-    const peaks = power.map((p,i) => ({bpm:i*freqRes*60,power:p})).filter(o => o.bpm >= 40 && o.bpm <= 200);
-    if(peaks.length === 0) return 0;
-    const peak = peaks.reduce((a,b) => a.power > b.power ? a : b);
-    return Math.round(peak.bpm);
+    photoCanvas.width = video.videoWidth;
+    photoCanvas.height = video.videoHeight;
+    photoCtx.clearRect(0, 0, photoCanvas.width, photoCanvas.height);
+
+    // フィルター設定
+    photoCtx.save();
+    applyFilters(photoCtx, photoCanvas.width, photoCanvas.height);
+
+    // 描画
+    photoCtx.drawImage(video, 0, 0, photoCanvas.width, photoCanvas.height);
+    photoCtx.restore();
+
+    // 画像データ作成
+    const dataUrl = photoCanvas.toDataURL("image/png");
+
+    // アルバム追加
+    addPhotoToAlbum(dataUrl);
+  });
+
+  // アルバムに追加
+  function addPhotoToAlbum(dataUrl){
+    const now = new Date();
+    const entry = document.createElement("div");
+    entry.className = "photo-entry";
+
+    const thumb = document.createElement("img");
+    thumb.className = "photo-thumb";
+    thumb.src = dataUrl;
+    thumb.alt = `撮影画像 F値:${fValue.toFixed(1)} BPM:${bpm}`;
+
+    const info = document.createElement("div");
+    info.className = "photo-info";
+    info.innerHTML =
+      `<div>F値: ${fValue.toFixed(1)}</div>` +
+      `<div>BPM: ${bpm}</div>` +
+      `<div>${now.toLocaleString()}</div>`;
+
+    entry.appendChild(thumb);
+    entry.appendChild(info);
+
+    album.appendChild(entry);
+    albumPhotos.push({dataUrl, fValue, bpm, date: now});
   }
 
-  async function toggleTorch(on){
-    if(!videoTrack) return;
-    try {
-      await videoTrack.applyConstraints({advanced:[{torch:on}]});
-    } catch(e) {
-      // torchがない端末もある
-    }
-  }
-
-  bpmStartBtn.onclick = async () => {
-    if(bpmMeasuring) return;
-    bpmMeasuring = true;
-    bpmHistory = [];
-    bpmStatus.textContent = "BPM: 計測中...";
-    bpmNextBtn.style.display = "none";
-    bpmInfo.textContent = "ライトに指をかざして計測してください";
-    await toggleTorch(true);
-    bpmMeasureStart = Date.now();
-
-    // 計測ループ
-    function measureLoop(){
-      if(!bpmMeasuring) return;
-      const s = 100;
-      const canvasTmp = document.createElement("canvas");
-      canvasTmp.width = s;
-      canvasTmp.height = s;
-      const ctxTmp = canvasTmp.getContext("2d");
-      ctxTmp.drawImage(video, (video.videoWidth-s)/2, (video.videoHeight-s)/2, s, s, 0, 0, s, s);
-      const imgdata = ctxTmp.getImageData(0,0,s,s).data;
-      let sum = 0;
-      for(let i=0; i<imgdata.length; i+=4) sum += imgdata[i];
-      bpmHistory.push({v:sum/(imgdata.length/4), t:Date.now()});
-      drawBPMGraph();
-
-      if(Date.now() - bpmMeasureStart > BPM_MEASURE_DURATION){
-        bpmMeasuring = false;
-        toggleTorch(false);
-        bpm = calcBPMFromHistory();
-        if(bpm < 40 || bpm > 200) {
+})();
+</script>
+</body>
+</html>
