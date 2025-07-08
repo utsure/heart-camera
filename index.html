@@ -68,11 +68,9 @@
     #capture-btn {
       background: #ff4757;
     }
-    
-    /* --- ★ここからアルバムギャラリー用のスタイルを追加 --- */
     #gallery {
       position: absolute;
-      bottom: 100px; /* ボタンの上に配置 */
+      bottom: 100px;
       left: 0;
       width: 100%;
       height: 90px;
@@ -82,7 +80,7 @@
       display: flex;
       align-items: center;
       gap: 8px;
-      overflow-x: auto; /* 横にスクロール可能にする */
+      overflow-x: auto;
       overflow-y: hidden;
       z-index: 10;
     }
@@ -100,33 +98,36 @@
     #gallery img:hover {
       transform: scale(1.05);
     }
-    /* --- ★ここまで追加 --- */
-
+    #graph {
+      position: absolute;
+      top: 0;
+      right: 0;
+      width: 200px;
+      height: 100px;
+      background: rgba(0, 0, 0, 0.5);
+      z-index: 20;
+    }
   </style>
 </head>
 <body>
-
-<div id="ui">
-  <div id="bpm" class="ui-item">BPM: ---</div>
-  <div id="fval-display" class="ui-item">F値: 4.0</div>
-</div>
-
-<div id="instructions">
-  <p>背面のカメラとライトを<br>指でそっと覆ってください</p>
-  <p>↓</p>
-  <p>下のライトボタン(💡)を押して<br>計測を開始します</p>
-</div>
-
-<canvas id="canvas"></canvas>
-
-<div id="gallery"></div>
-<div class="button-container">
-  <button id="flash-btn">💡</button>
-  <button id="capture-btn">📸</button>
-</div>
-
+  <div id="ui">
+    <div id="bpm" class="ui-item">BPM: ---</div>
+    <div id="fval-display" class="ui-item">F値: 4.0</div>
+  </div>
+  <div id="instructions">
+    <p>背面のカメラとライトを<br>指でそっと覆ってください</p>
+    <p>↓</p>
+    <p>下のライトボタン(💡)を押して<br>計測を開始します</p>
+  </div>
+  <canvas id="canvas"></canvas>
+  <canvas id="graph"></canvas>
+  <div id="gallery"></div>
+  <div class="button-container">
+    <button id="flash-btn">💡</button>
+    <button id="capture-btn">📸</button>
+  </div>
 <script>
-let video, canvas, ctx;
+let video, canvas, ctx, graphCanvas, graphCtx;
 let videoTrack;
 let fValue = 4.0;
 let bpm = 0;
@@ -159,7 +160,7 @@ async function initCamera() {
     const tracks = stream.getVideoTracks();
     if (tracks.length > 0) videoTrack = tracks[0];
   } catch (err) {
-    alert("カメラの起動に失敗しました。ブラウザのカメラ利用を許可してください。\n" + err);
+    alert("カメラの起動に失敗しました。\n" + err);
     return;
   }
 
@@ -172,8 +173,13 @@ async function initCamera() {
 function setupCanvas() {
   canvas = document.getElementById("canvas");
   ctx = canvas.getContext("2d");
+  graphCanvas = document.getElementById("graph");
+  graphCtx = graphCanvas.getContext("2d");
+
   canvas.width = window.innerWidth;
   canvas.height = window.innerHeight;
+  graphCanvas.width = 200;
+  graphCanvas.height = 100;
 
   canvas.addEventListener("wheel", e => {
     e.preventDefault();
@@ -199,7 +205,9 @@ function updateFValue() {
   fvalText.innerText = `F値: ${fValue.toFixed(1)}`;
 }
 
-function dist(p1, p2) { return Math.sqrt(Math.pow(p1.clientX - p2.clientX, 2) + Math.pow(p1.clientY - p2.clientY, 2)); }
+function dist(p1, p2) {
+  return Math.hypot(p1.clientX - p2.clientX, p1.clientY - p2.clientY);
+}
 
 function draw() {
   const videoRatio = video.videoWidth / video.videoHeight;
@@ -212,17 +220,20 @@ function draw() {
     drawWidth = canvas.width; drawHeight = drawWidth / videoRatio;
     startY = (canvas.height - drawHeight) / 2; startX = 0;
   }
+
   ctx.drawImage(video, startX, startY, drawWidth, drawHeight);
 
   if (isMeasuring) {
-    const frame = ctx.getImageData(canvas.width / 2 - 10, canvas.height / 2 - 10, 20, 20);
+    const frame = ctx.getImageData(canvas.width / 2 - 50, canvas.height / 2 - 50, 100, 100);
     let sumRed = 0;
-    for (let i = 0; i < frame.data.length; i += 4) sumRed += frame.data[i];
+    for (let i = 0; i < frame.data.length; i += 4) {
+      sumRed += frame.data[i];
+    }
     const avgRed = sumRed / (frame.data.length / 4);
-    
     if (!isNaN(avgRed)) {
       redHistory.push({ value: avgRed, time: Date.now() });
     }
+    drawGraph();
   }
 
   ctx.fillStyle = "rgba(0,0,0,0.8)";
@@ -236,48 +247,62 @@ function draw() {
   requestAnimationFrame(draw);
 }
 
-function calculateBPM(history) {
-    if (history.length < 50) return 0;
-    const rawSignal = history.map(p => p.value);
-    const smoothedSignal = [];
-    const filterWindow = 5;
-    for (let i = 0; i < rawSignal.length - filterWindow; i++) {
-        let sum = 0;
-        for (let j = 0; j < filterWindow; j++) sum += rawSignal[i + j];
-        smoothedSignal.push(sum / filterWindow);
-    }
-    const times = history.map(p => p.time).slice(0, smoothedSignal.length);
-    const mean = smoothedSignal.reduce((a, b) => a + b, 0) / smoothedSignal.length;
-    const detrendedSignal = smoothedSignal.map(v => v - mean);
-    const stdDev = Math.sqrt(detrendedSignal.map(x => Math.pow(x, 2)).reduce((a, b) => a + b) / detrendedSignal.length);
-    if (stdDev < 0.5) return 0; 
-    const duration = (times[times.length - 1] - times[0]) / 1000;
-    if (duration === 0) return 0;
-    const samplingRate = (times.length - 1) / duration;
-    const minLag = Math.floor(samplingRate * (60 / 200)); 
-    const maxLag = Math.ceil(samplingRate * (60 / 40));
-    let bestLag = 0;
-    let maxCorr = 0;
-    for (let lag = minLag; lag <= maxLag; lag++) {
-        if (lag >= detrendedSignal.length) break;
-        let corr = 0;
-        for (let i = 0; i < detrendedSignal.length - lag; i++) {
-            corr += detrendedSignal[i] * detrendedSignal[i + lag];
-        }
-        if (corr > maxCorr) {
-            maxCorr = corr;
-            bestLag = lag;
-        }
-    }
-    if (bestLag === 0) return 0;
-    const period = bestLag / samplingRate;
-    return Math.round(60 / period);
+function drawGraph() {
+  const values = redHistory.slice(-200).map(p => p.value);
+  const max = Math.max(...values);
+  const min = Math.min(...values);
+
+  graphCtx.clearRect(0, 0, graphCanvas.width, graphCanvas.height);
+  graphCtx.beginPath();
+  values.forEach((v, i) => {
+    const x = (i / values.length) * graphCanvas.width;
+    const y = graphCanvas.height - ((v - min) / (max - min + 1e-6)) * graphCanvas.height;
+    if (i === 0) graphCtx.moveTo(x, y);
+    else graphCtx.lineTo(x, y);
+  });
+  graphCtx.strokeStyle = "#00ff88";
+  graphCtx.lineWidth = 1.5;
+  graphCtx.stroke();
 }
 
+function calculateBPM_FFT(history) {
+  if (history.length < 64) return 0;
+
+  const signal = history.map(p => p.value);
+  const times = history.map(p => p.time);
+  const duration = (times[times.length - 1] - times[0]) / 1000;
+
+  const mean = signal.reduce((a, b) => a + b, 0) / signal.length;
+  const centered = signal.map(v => v - mean);
+  const stdDev = Math.sqrt(centered.map(v => v ** 2).reduce((a, b) => a + b) / centered.length);
+
+  if (stdDev < 0.5) return 0; // 信号弱すぎ
+
+  const n = signal.length;
+  const re = new Array(n).fill(0), im = new Array(n).fill(0);
+
+  for (let k = 0; k < n; k++) {
+    for (let t = 0; t < n; t++) {
+      const angle = (2 * Math.PI * t * k) / n;
+      re[k] += centered[t] * Math.cos(angle);
+      im[k] -= centered[t] * Math.sin(angle);
+    }
+  }
+
+  const power = re.map((r, i) => Math.sqrt(r ** 2 + im[i] ** 2));
+  const freqResolution = 1 / duration;
+  const bpmList = power.map((p, i) => ({ bpm: (i * freqResolution) * 60, power: p }));
+
+  const filtered = bpmList.filter(p => p.bpm >= 40 && p.bpm <= 200);
+  if (filtered.length === 0) return 0;
+
+  const peak = filtered.reduce((a, b) => a.power > b.power ? a : b);
+  return Math.round(peak.bpm);
+}
 
 flashBtn.addEventListener("click", () => {
   if (!videoTrack || isMeasuring) return;
-  
+
   isFlashOn = !isFlashOn;
   videoTrack.applyConstraints({ advanced: [{ torch: isFlashOn }] });
   flashBtn.style.background = isFlashOn ? "#ffdd59" : "rgba(255, 255, 255, 0.3)";
@@ -290,33 +315,33 @@ flashBtn.addEventListener("click", () => {
     flashBtn.disabled = true;
 
     setTimeout(() => {
-        isMeasuring = false;
-        flashBtn.disabled = false;
-        let newBpm = calculateBPM(redHistory);
-        if (newBpm < 40 || newBpm > 200) {
-            newBpm = 65 + Math.floor(Math.random() * 16); 
-        }
-        bpm = newBpm;
+      isMeasuring = false;
+      flashBtn.disabled = false;
+      const result = calculateBPM_FFT(redHistory);
+      if (result < 40 || result > 200 || isNaN(result)) {
+        bpmText.innerText = "BPM: 測定失敗";
+        bpm = 0;
+      } else {
+        bpm = result;
         bpmText.innerText = `BPM: ${bpm}`;
+      }
     }, 8000);
-
   } else {
     bpmText.innerText = 'BPM: ---';
     isMeasuring = false;
   }
 });
 
-// --- ★ここから撮影ボタンの処理を書き換え ---
 captureBtn.addEventListener("click", () => {
   const tempCanvas = document.createElement('canvas');
   const tempCtx = tempCanvas.getContext('2d');
   tempCanvas.width = canvas.width; 
   tempCanvas.height = canvas.height;
   tempCtx.drawImage(canvas, 0, 0);
-  
+
   const imageData = tempCtx.getImageData(0, 0, tempCanvas.width, tempCanvas.height);
   const data = imageData.data;
-  
+
   const currentBpm = (bpm > 40 && bpm < 200) ? bpm : 75;
   const factor = 2.0 / (fValue * (currentBpm / 60));
 
@@ -327,30 +352,18 @@ captureBtn.addEventListener("click", () => {
   }
   tempCtx.putImageData(imageData, 0, 0);
 
-  // --- 変更部分 ---
-  // 1. 画像データをURL形式に変換
   const dataURL = tempCanvas.toDataURL("image/jpeg", 0.9);
-  
-  // 2. ギャラリー要素を取得
   const gallery = document.getElementById('gallery');
-  
-  // 3. ダウンロード用のリンク(a)と表示用の画像(img)を作成
   const link = document.createElement('a');
   link.href = dataURL;
   link.download = `heart_camera_f${fValue.toFixed(1)}_bpm${currentBpm}.jpg`;
 
   const thumbImg = document.createElement('img');
   thumbImg.src = dataURL;
-  
-  // 4. リンクの中に画像を入れて、それをギャラリーに追加
   link.appendChild(thumbImg);
   gallery.appendChild(link);
-  
-  // 5. 新しい写真が見えるようにギャラリーをスクロール
   gallery.scrollLeft = gallery.scrollWidth;
 });
-// --- ★ここまで書き換え ---
-
 
 initCamera();
 </script>
