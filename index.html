@@ -5,367 +5,150 @@
   <title>F-Shutter Heart Camera</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
   <style>
-    body { 
-      margin: 0; 
-      overflow: hidden; 
-      background: #000; 
-      color: white; 
-      font-family: monospace, sans-serif;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-    }
-    #canvas { 
-      touch-action: none; 
-      width: 100%;
-      height: 100%;
-      object-fit: cover;
-    }
-    #ui { 
-      position: absolute; 
-      top: 15px; 
-      left: 15px; 
-      z-index: 10; 
-      background: rgba(0,0,0,0.5);
-      padding: 10px;
-      border-radius: 8px;
-    }
-    .ui-item { font-size: 18px; color: white; margin-bottom: 5px; }
-    #bpm { color: #ff4757; font-weight: bold; }
-    #instructions {
-      position: absolute;
-      top: 50%;
-      left: 50%;
-      transform: translate(-50%, -50%);
-      text-align: center;
-      background: rgba(0,0,0,0.7);
-      padding: 15px;
-      border-radius: 10px;
-      z-index: 20;
-      pointer-events: none;
-    }
-    .button-container {
-      position: absolute;
-      bottom: 20px;
-      left: 50%;
-      transform: translateX(-50%);
-      display: flex;
-      gap: 15px;
-      z-index: 10;
-    }
-    .button-container button {
-      width: 60px;
-      height: 60px;
-      border-radius: 50%;
-      border: 4px solid white;
-      background: rgba(255, 255, 255, 0.3);
-      font-size: 28px;
-      cursor: pointer;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-    }
-    #capture-btn {
-      background: #ff4757;
-    }
-    #gallery {
-      position: absolute;
-      bottom: 100px;
-      left: 0;
-      width: 100%;
-      height: 90px;
-      background: rgba(0,0,0,0.4);
-      padding: 5px;
-      box-sizing: border-box;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      overflow-x: auto;
-      overflow-y: hidden;
-      z-index: 10;
-    }
-    #gallery a {
-      height: 100%;
-      display: inline-block;
-    }
-    #gallery img {
-      height: 100%;
-      border-radius: 5px;
-      border: 2px solid white;
-      cursor: pointer;
-      transition: transform 0.1s ease;
-    }
-    #gallery img:hover {
-      transform: scale(1.05);
-    }
-    #graph {
-      position: absolute;
-      top: 0;
-      right: 0;
-      width: 200px;
-      height: 100px;
-      background: rgba(0, 0, 0, 0.5);
-      z-index: 20;
-    }
+    body {margin:0;overflow:hidden;background:#000;color:white;font-family:monospace;}
+    #canvas, #graph, #canvasBG {position:absolute;top:0;left:0;}
+    #canvas {width:100%;height:100%;touch-action:none;object-fit:cover;}
+    #canvasBG {filter:blur(5px);opacity:0;transition:opacity .3s;}
+    #graph {width:200px;height:100px;right:0;top:0;z-index:20;background:rgba(0,0,0,0.5);}
+    #ui{position:absolute;top:15px;left:15px;z-index:10;background:rgba(0,0,0,0.5);padding:10px;border-radius:8px;}
+    .ui-item{font-size:18px;color:white;margin-bottom:5px;}
+    #bpm{color:#ff4757;font-weight:bold;}
+    #instructions{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);text-align:center;
+      background:rgba(0,0,0,0.7);padding:15px;border-radius:10px;z-index:20;pointer-events:none;}
+    .button-container{position:absolute;bottom:20px;left:50%;transform:translateX(-50%);display:flex;gap:15px;z-index:10;}
+    .button-container button{width:60px;height:60px;border-radius:50%;border:4px solid white;
+      background:rgba(255,255,255,0.3);font-size:28px;cursor:pointer;display:flex;justify-content:center;align-items:center;}
+    #capture-btn{background:#ff4757;}
+    #gallery{position:absolute;bottom:100px;left:0;width:100%;height:90px;background:rgba(0,0,0,0.4);
+      padding:5px;box-sizing:border-box;display:flex;align-items:center;gap:8px;overflow-x:auto;z-index:10;}
+    #gallery img{height:100%;border-radius:5px;border:2px solid white;cursor:pointer;transition:transform .1s;}
+    #gallery img:hover{transform:scale(1.05);}
   </style>
 </head>
 <body>
+  <video id="canvasBG" muted playsinline autoplay></video>
+  <canvas id="canvas"></canvas>
+  <canvas id="graph"></canvas>
   <div id="ui">
     <div id="bpm" class="ui-item">BPM: ---</div>
     <div id="fval-display" class="ui-item">F値: 4.0</div>
   </div>
   <div id="instructions">
-    <p>背面のカメラとライトを<br>指でそっと覆ってください</p>
+    <p>背面のカメラとライトを指でそっと覆ってください</p>
     <p>↓</p>
-    <p>下のライトボタン(💡)を押して<br>計測を開始します</p>
+    <p>下のライトボタン(💡)を押して計測を開始します</p>
   </div>
-  <canvas id="canvas"></canvas>
-  <canvas id="graph"></canvas>
   <div id="gallery"></div>
   <div class="button-container">
     <button id="flash-btn">💡</button>
     <button id="capture-btn">📸</button>
   </div>
 <script>
-let video, canvas, ctx, graphCanvas, graphCtx;
-let videoTrack;
-let fValue = 4.0;
-let bpm = 0;
-let redHistory = [];
-let lastPinchDist = 0;
-let isFlashOn = false;
-let isMeasuring = false;
-let scale = 1.0;
+let canvas=document.getElementById("canvas"),
+    ctx=canvas.getContext("2d"),
+    bgvid=document.getElementById("canvasBG"),
+    graphC=document.getElementById("graph"),
+    gctx=graphC.getContext("2d"),
+    bpmText=document.getElementById("bpm"),
+    fvalText=document.getElementById("fval-display"),
+    instr=document.getElementById("instructions"),
+    flashBtn=document.getElementById("flash-btn"),
+    captureBtn=document.getElementById("capture-btn"),
+    gallery=document.getElementById("gallery");
 
-const bpmText = document.getElementById("bpm");
-const fvalText = document.getElementById("fval-display");
-const instructions = document.getElementById("instructions");
-const flashBtn = document.getElementById("flash-btn");
-const captureBtn = document.getElementById("capture-btn");
+let videoTrack, fValue=4.0, bpm=0, avgBpm=75, redHistory=[],
+    isMeasuring=false,isFlashOn=false,scale=1, lastPinch=0;
 
-async function initCamera() {
-  video = document.createElement("video");
-  video.setAttribute("autoplay", true);
-  video.setAttribute("playsinline", true);
-
-  try {
-    const stream = await navigator.mediaDevices.getUserMedia({ 
-      video: { 
-        facingMode: "environment",
-        width: { ideal: 1280 },
-        height: { ideal: 720 }
-      } 
-    });
-    video.srcObject = stream;
-    const tracks = stream.getVideoTracks();
-    if (tracks.length > 0) videoTrack = tracks[0];
-  } catch (err) {
-    alert("カメラの起動に失敗しました。\n" + err);
-    return;
-  }
-
-  video.addEventListener("loadeddata", () => {
-    setupCanvas();
-    requestAnimationFrame(draw);
-  });
+async function initCam(){
+  background: try{}
+  const stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:"environment",width:{ideal:1280},height:{ideal:720}}});
+  bgvid.srcObject=stream;
+  videoTrack=stream.getVideoTracks()[0];
+  bgvid.onloadeddata=()=>{setup();requestAnimationFrame(loop)};
 }
-
-function setupCanvas() {
-  canvas = document.getElementById("canvas");
-  ctx = canvas.getContext("2d");
-  graphCanvas = document.getElementById("graph");
-  graphCtx = graphCanvas.getContext("2d");
-
-  canvas.width = window.innerWidth;
-  canvas.height = window.innerHeight;
-  graphCanvas.width = 200;
-  graphCanvas.height = 100;
-
-  canvas.addEventListener("wheel", e => {
-    e.preventDefault();
-    scale += e.deltaY * -0.001;
-    updateFValue();
-  }, { passive: false });
-
-  canvas.addEventListener("touchstart", e => { if (e.touches.length === 2) lastPinchDist = dist(e.touches[0], e.touches[1]); });
-  canvas.addEventListener("touchmove", e => {
-    e.preventDefault();
-    if (e.touches.length === 2) {
-      const currentDist = dist(e.touches[0], e.touches[1]);
-      scale += (currentDist - lastPinchDist) * 0.005;
-      lastPinchDist = currentDist;
-      updateFValue();
-    }
-  }, { passive: false });
+function setup(){
+  canvas.width=bgvid.videoWidth; canvas.height=bgvid.videoHeight;
+  graphC.width=200; graphC.height=100;
+  window.onresize=()=>{canvas.width=bgvid.videoWidth;canvas.height=bgvid.videoHeight};
+  canvas.onwheel=e=>{e.preventDefault();scale+=-e.deltaY*0.001;updF());},canvas.addEventListener("touchstart",e=>{if(e.touches.length===2)lastPinch=dist(e.touches[0],e.touches[1]);});
+  canvas.addEventListener("touchmove",e=>{e.preventDefault();if(e.touches.length===2){const d=dist(e.touches[0],e.touches[1]);scale+= (d-lastPinch)*0.005;lastPinch=d;updF();}});
 }
+function updF(){scale=Math.max(0.25,Math.min(scale,4));fValue=16/scale/4;fvalText.innerText=`F値: ${fValue.toFixed(1)}`;}
+function dist(a,b){return Math.hypot(a.clientX-b.clientX,a.clientY-b.clientY);}
 
-function updateFValue() {
-  scale = Math.max(0.25, Math.min(scale, 4.0));
-  fValue = 16.0 / scale / 4.0;
-  fvalText.innerText = `F値: ${fValue.toFixed(1)}`;
-}
-
-function dist(p1, p2) {
-  return Math.hypot(p1.clientX - p2.clientX, p1.clientY - p2.clientY);
-}
-
-function draw() {
-  const videoRatio = video.videoWidth / video.videoHeight;
-  const canvasRatio = canvas.width / canvas.height;
-  let drawWidth, drawHeight, startX, startY;
-  if (videoRatio > canvasRatio) {
-    drawHeight = canvas.height; drawWidth = drawHeight * videoRatio;
-    startX = (canvas.width - drawWidth) / 2; startY = 0;
-  } else {
-    drawWidth = canvas.width; drawHeight = drawWidth / videoRatio;
-    startY = (canvas.height - drawHeight) / 2; startX = 0;
-  }
-
-  ctx.drawImage(video, startX, startY, drawWidth, drawHeight);
-
-  if (isMeasuring) {
-    const frame = ctx.getImageData(canvas.width / 2 - 50, canvas.height / 2 - 50, 100, 100);
-    let sumRed = 0;
-    for (let i = 0; i < frame.data.length; i += 4) {
-      sumRed += frame.data[i];
-    }
-    const avgRed = sumRed / (frame.data.length / 4);
-    if (!isNaN(avgRed)) {
-      redHistory.push({ value: avgRed, time: Date.now() });
-    }
+function loop(){
+  ctx.globalAlpha=1;
+  ctx.drawImage(bgvid,0,0,canvas.width,canvas.height);
+  if(isMeasuring){
+    const w=canvas.width/2-50,h=canvas.height/2-50;
+    const frame=ctx.getImageData(w,h,100,100);
+    let sum=0;
+    for(let i=0;i<frame.data.length;i+=4) sum+=frame.data[i];
+    redHistory.push({value:sum/(frame.data.length/4),time:Date.now()});
     drawGraph();
   }
-
-  ctx.fillStyle = "rgba(0,0,0,0.8)";
-  ctx.beginPath();
-  const outerRadius = Math.max(canvas.width, canvas.height);
-  ctx.arc(canvas.width / 2, canvas.height / 2, outerRadius, 0, 2 * Math.PI);
-  const innerRadius = 50 * scale;
-  ctx.arc(canvas.width / 2, canvas.height / 2, innerRadius, 0, 2 * Math.PI, true);
-  ctx.fill();
-
-  requestAnimationFrame(draw);
+  applyEffects();
+  requestAnimationFrame(loop);
 }
 
-function drawGraph() {
-  const values = redHistory.slice(-200).map(p => p.value);
-  const max = Math.max(...values);
-  const min = Math.min(...values);
-
-  graphCtx.clearRect(0, 0, graphCanvas.width, graphCanvas.height);
-  graphCtx.beginPath();
-  values.forEach((v, i) => {
-    const x = (i / values.length) * graphCanvas.width;
-    const y = graphCanvas.height - ((v - min) / (max - min + 1e-6)) * graphCanvas.height;
-    if (i === 0) graphCtx.moveTo(x, y);
-    else graphCtx.lineTo(x, y);
-  });
-  graphCtx.strokeStyle = "#00ff88";
-  graphCtx.lineWidth = 1.5;
-  graphCtx.stroke();
+function drawGraph(){
+  const data=redHistory.slice(-200).map(x=>x.value);
+  const min=Math.min(...data),max=Math.max(...data);
+  gctx.clearRect(0,0,200,100);gctx.beginPath();
+  data.forEach((v,i)=>{const x=(i/data.length)*200, y=100-((v-min)/(max-min+1e-6))*100; i?gctx.lineTo(x,y):gctx.moveTo(x,y)});
+  gctx.strokeStyle="#0f8";gctx.lineWidth=1.5;gctx.stroke();
 }
 
-function calculateBPM_FFT(history) {
-  if (history.length < 64) return 0;
+function applyEffects(){
+  const bright=bpm>avgBpm?0.8:1.2;
+  ctx.globalAlpha=(4/fValue)*(bpm?bright:1);
+}
 
-  const signal = history.map(p => p.value);
-  const times = history.map(p => p.time);
-  const duration = (times[times.length - 1] - times[0]) / 1000;
-
-  const mean = signal.reduce((a, b) => a + b, 0) / signal.length;
-  const centered = signal.map(v => v - mean);
-  const stdDev = Math.sqrt(centered.map(v => v ** 2).reduce((a, b) => a + b) / centered.length);
-
-  if (stdDev < 0.5) return 0; // 信号弱すぎ
-
-  const n = signal.length;
-  const re = new Array(n).fill(0), im = new Array(n).fill(0);
-
-  for (let k = 0; k < n; k++) {
-    for (let t = 0; t < n; t++) {
-      const angle = (2 * Math.PI * t * k) / n;
-      re[k] += centered[t] * Math.cos(angle);
-      im[k] -= centered[t] * Math.sin(angle);
-    }
-  }
-
-  const power = re.map((r, i) => Math.sqrt(r ** 2 + im[i] ** 2));
-  const freqResolution = 1 / duration;
-  const bpmList = power.map((p, i) => ({ bpm: (i * freqResolution) * 60, power: p }));
-
-  const filtered = bpmList.filter(p => p.bpm >= 40 && p.bpm <= 200);
-  if (filtered.length === 0) return 0;
-
-  const peak = filtered.reduce((a, b) => a.power > b.power ? a : b);
+function calcBPM(){
+  if(redHistory.length<64)return 0;
+  const vals=redHistory.map(x=>x.value), times=redHistory.map(x=>x.time);
+  const duration=(times.pop()-times[0])/1e3;
+  const mean=vals.reduce((a,b)=>a+b)/vals.length;
+  const cent=vals.map(v=>v-mean); const std=Math.sqrt(cent.map(v=>v*v).reduce((a,b)=>a+b)/cent.length);
+  if(std<0.5) return 0;
+  const n=vals.length, re=new Array(n).fill(0), im=new Array(n).fill(0);
+  for(let k=0;k<n;k++)for(let t=0;t<n;t++){const a=2*Math.PI*t*k/n;re[k]+=cent[t]*Math.cos(a);im[k]-=cent[t]*Math.sin(a);}
+  const pwr=re.map((r,i)=>Math.sqrt(r*r+im[i]*im[i]));
+  const res=1/duration;
+  const peaks=pwr.map((p,i)=>({bpm:i*res*60,power:p})).filter(x=>x.bpm>=40&&x.bpm<=200);
+  if(!peaks.length)return 0;
+  const peak=peaks.reduce((a,b)=>a.power>b.power?a:b);
   return Math.round(peak.bpm);
 }
 
-flashBtn.addEventListener("click", () => {
-  if (!videoTrack || isMeasuring) return;
+flashBtn.onclick=async()=>{
+  if(!videoTrack||isMeasuring)return;
+  isFlashOn=!isFlashOn;
+  try{await videoTrack.applyConstraints({advanced:[{torch:isFlashOn}]});}catch{}
+  flashBtn.style.background=isFlashOn?"#ffdd59":"rgba(255,255,255,0.3)";
+  if(isFlashOn){
+    instr.style.display="none";
+    isMeasuring=true; redHistory=[];
+    bpmText.innerText="BPM: 計測中...";
+    setTimeout(()=>{
+      isMeasuring=false;
+      const res=calcBPM();
+      if(res<40||res>200){bpmText.innerText="BPM: 測定失敗"; bpm=0;}else{avgBpm=bpm=res; bpmText.innerText=`BPM: ${bpm}`;}
+    },8000);
+  } else {bpmText.innerText="BPM: ---"; isMeasuring=false;}
+};
 
-  isFlashOn = !isFlashOn;
-  videoTrack.applyConstraints({ advanced: [{ torch: isFlashOn }] });
-  flashBtn.style.background = isFlashOn ? "#ffdd59" : "rgba(255, 255, 255, 0.3)";
+captureBtn.onclick=()=>{
+  const tmp=document.createElement("canvas"),tc=tmp.getContext("2d");
+  tmp.width=canvas.width;tmp.height=canvas.height;
+  tc.globalAlpha=ctx.globalAlpha; tc.drawImage(canvas,0,0);
+  const url=tmp.toDataURL("image/jpeg",0.9);
+  const link=document.createElement("a"),img=document.createElement("img");
+  link.href=img.src=url; link.download=`heart_f${fValue.toFixed(1)}_bpm${bpm||avgBpm}.jpg`;
+  img.src=url; link.appendChild(img); gallery.appendChild(link); gallery.scrollLeft=gallery.scrollWidth;
+};
 
-  if (isFlashOn) {
-    instructions.style.display = 'none';
-    isMeasuring = true;
-    redHistory = [];
-    bpmText.innerText = 'BPM: 計測中...';
-    flashBtn.disabled = true;
-
-    setTimeout(() => {
-      isMeasuring = false;
-      flashBtn.disabled = false;
-      const result = calculateBPM_FFT(redHistory);
-      if (result < 40 || result > 200 || isNaN(result)) {
-        bpmText.innerText = "BPM: 測定失敗";
-        bpm = 0;
-      } else {
-        bpm = result;
-        bpmText.innerText = `BPM: ${bpm}`;
-      }
-    }, 8000);
-  } else {
-    bpmText.innerText = 'BPM: ---';
-    isMeasuring = false;
-  }
-});
-
-captureBtn.addEventListener("click", () => {
-  const tempCanvas = document.createElement('canvas');
-  const tempCtx = tempCanvas.getContext('2d');
-  tempCanvas.width = canvas.width; 
-  tempCanvas.height = canvas.height;
-  tempCtx.drawImage(canvas, 0, 0);
-
-  const imageData = tempCtx.getImageData(0, 0, tempCanvas.width, tempCanvas.height);
-  const data = imageData.data;
-
-  const currentBpm = (bpm > 40 && bpm < 200) ? bpm : 75;
-  const factor = 2.0 / (fValue * (currentBpm / 60));
-
-  for (let i = 0; i < data.length; i += 4) {
-    data[i] = Math.min(255, data[i] * factor);
-    data[i+1] = Math.min(255, data[i+1] * factor);
-    data[i+2] = Math.min(255, data[i+2] * factor);
-  }
-  tempCtx.putImageData(imageData, 0, 0);
-
-  const dataURL = tempCanvas.toDataURL("image/jpeg", 0.9);
-  const gallery = document.getElementById('gallery');
-  const link = document.createElement('a');
-  link.href = dataURL;
-  link.download = `heart_camera_f${fValue.toFixed(1)}_bpm${currentBpm}.jpg`;
-
-  const thumbImg = document.createElement('img');
-  thumbImg.src = dataURL;
-  link.appendChild(thumbImg);
-  gallery.appendChild(link);
-  gallery.scrollLeft = gallery.scrollWidth;
-});
-
-initCamera();
+initCam();
 </script>
 </body>
 </html>
