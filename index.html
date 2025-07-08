@@ -103,6 +103,7 @@
     #graph {
       width: 100%;
       height: 100%;
+      background: rgba(0,0,0,0.4);
     }
     #shutter-button {
       bottom: 10px;
@@ -144,21 +145,13 @@
   const video = document.getElementById("video");
   const canvas = document.getElementById("canvas");
   const ctx = canvas.getContext("2d");
-  const fValueText = document.getElementById("f-value");
-  const bpmValueText = document.getElementById("bpm-value");
-  const centerCircle = document.getElementById("center-circle");
-  const shutterButton = document.getElementById("shutter-button");
-  const gallery = document.getElementById("gallery");
-  const albumButton = document.getElementById("album-button");
-  const startBpmButton = document.getElementById("start-bpm-button");
+  const bpmText = document.getElementById("bpm-value");
   const graph = document.getElementById("graph");
   const gctx = graph.getContext("2d");
 
-  let fValue = 4.0;
-  let bpm = 0;
   let measuring = false;
+  let bpm = 0;
   let history = [];
-  let bpmTimer;
 
   const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
   video.srcObject = stream;
@@ -172,63 +165,56 @@
 
   video.addEventListener("loadeddata", () => {
     resize();
-    updateFvalUI(fValue);
     requestAnimationFrame(loop);
   });
 
-  function updateFvalUI(newFval) {
-    const minF = 1.0, maxF = 16.0;
-    fValue = Math.min(maxF, Math.max(minF, newFval));
-    fValueText.textContent = fValue.toFixed(1);
-    const size = 300 - ((fValue - 1.0) / 15) * 150;
-    centerCircle.style.width = `${size}px`;
-    centerCircle.style.height = `${size}px`;
+  function drawGraph() {
+    const arr = history.slice(-graph.width).map(o => o.v);
+    const min = Math.min(...arr), max = Math.max(...arr);
+    gctx.clearRect(0, 0, graph.width, graph.height);
+    gctx.beginPath();
+    arr.forEach((v, i) => {
+      const x = (i / arr.length) * graph.width;
+      const y = graph.height - ((v - min) / (max - min + 1e-6)) * graph.height;
+      i === 0 ? gctx.moveTo(x, y) : gctx.lineTo(x, y);
+    });
+    gctx.strokeStyle = "#0f8";
+    gctx.lineWidth = 1.5;
+    gctx.stroke();
   }
 
-  let initialPinch = null;
-  window.addEventListener("touchmove", e => {
-    if (e.touches.length === 2) {
-      e.preventDefault();
-      const dx = e.touches[0].clientX - e.touches[1].clientX;
-      const dy = e.touches[0].clientY - e.touches[1].clientY;
-      const dist = Math.hypot(dx, dy);
-      if (initialPinch != null) {
-        const diff = dist - initialPinch;
-        updateFvalUI(fValue - diff * 0.01);
+  function calcBPM() {
+    const vals = history.map(o => o.v);
+    const times = history.map(o => o.t);
+    const mean = vals.reduce((a,b)=>a+b)/vals.length;
+    const cen = vals.map(v => v - mean);
+    const n = cen.length;
+    const re = new Array(n).fill(0), im = new Array(n).fill(0);
+    for (let k = 0; k < n; k++)
+      for (let t = 0; t < n; t++) {
+        const ang = (2 * Math.PI * t * k) / n;
+        re[k] += cen[t] * Math.cos(ang);
+        im[k] -= cen[t] * Math.sin(ang);
       }
-      initialPinch = dist;
-    }
-  }, { passive: false });
-  window.addEventListener("touchend", () => { initialPinch = null });
+    const power = re.map((r, i) => Math.hypot(r, im[i]));
+    const dur = (times[times.length - 1] - times[0]) / 1000;
+    const freqRes = 1 / dur;
+    const peaks = power.map((p, i) => ({ bpm: i * freqRes * 60, power: p })).filter(o => o.bpm >= 40 && o.bpm <= 200);
+    if (!peaks.length) return 0;
+    return Math.round(peaks.reduce((a,b)=>a.power > b.power ? a : b).bpm);
+  }
 
-  function startBPMMeasurement() {
+  document.getElementById("start-bpm-button").onclick = () => {
+    if (measuring) return;
     measuring = true;
     history = [];
-    bpmValueText.textContent = "測定中...";
-    if (bpmTimer) clearTimeout(bpmTimer);
-    bpmTimer = setTimeout(() => {
+    bpmText.textContent = "測定中...";
+    setTimeout(() => {
       measuring = false;
-      bpm = calculateBPM();
-      bpmValueText.textContent = bpm > 0 ? Math.round(bpm) : "---";
+      bpm = calcBPM();
+      bpmText.textContent = bpm > 0 ? Math.round(bpm) : "---";
     }, 8000);
-  }
-
-  function calculateBPM() {
-    if (history.length < 2) return 0;
-    const times = history.map(d => d.t);
-    const values = history.map(d => d.v);
-    const mean = values.reduce((a,b)=>a+b)/values.length;
-    const peaks = [];
-    for (let i = 1; i < values.length - 1; i++) {
-      if (values[i] > mean && values[i] > values[i-1] && values[i] > values[i+1]) {
-        peaks.push(times[i]);
-      }
-    }
-    if (peaks.length < 2) return 0;
-    const intervals = peaks.slice(1).map((t,i) => t - peaks[i]);
-    const avgInterval = intervals.reduce((a,b)=>a+b)/intervals.length;
-    return 60000 / avgInterval;
-  }
+  };
 
   function loop() {
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
@@ -241,39 +227,11 @@
       for (let i = 0; i < data.length; i += 4) sum += data[i];
       const avg = sum / (data.length / 4);
       history.push({ v: avg, t: Date.now() });
-      if (history.length > 300) history.shift();
+      if (history.length > 512) history.shift();
+      drawGraph();
     }
     requestAnimationFrame(loop);
   }
-
-  shutterButton.addEventListener("click", () => {
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    if (fValue < 10) ctx.filter = 'blur(3px)';
-    else ctx.filter = 'none';
-    ctx.globalAlpha = bpm > 80 ? 0.7 : 1.0;
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-    ctx.filter = 'none';
-    ctx.globalAlpha = 1.0;
-
-    const url = canvas.toDataURL("image/jpeg", 0.9);
-    const entry = document.createElement("div");
-    entry.className = "entry";
-    entry.innerHTML = `
-      <img src="${url}" />
-      <div class="meta">
-        F${fValue.toFixed(1)}<br>
-        BPM ${Math.round(bpm)}<br>
-        ${new Date().toLocaleTimeString()}
-      </div>
-    `;
-    gallery.appendChild(entry);
-  });
-
-  albumButton.addEventListener("click", () => {
-    gallery.style.display = gallery.style.display === "flex" ? "none" : "flex";
-  });
-
-  startBpmButton.addEventListener("click", startBPMMeasurement);
 })();
 </script>
 </body>
