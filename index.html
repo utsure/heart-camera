@@ -208,8 +208,7 @@
       }
     }
 
-    const brightness = 1.0;
-    return `blur(${blurPx}px) brightness(${brightness}) drop-shadow(0 0 5px rgb(${r},${g},${b}))`;
+    return `blur(${blurPx}px) drop-shadow(0 0 5px rgb(${r},${g},${b}))`;
   }
 
   video.addEventListener("loadeddata", () => {
@@ -266,20 +265,28 @@
   }
 
   function loop() {
-    // videoにリアルタイムフィルター適用
+    // 動画プレビューにはリアルタイムフィルター適用
     video.style.filter = computeCssFilter(fValue, bpm);
 
-    // canvasは波形描画用に利用
+    // canvasは波形計測用に使うためまずクリア
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
     if (measuring) {
+      // canvasにvideo映像を描画（フィルターなしで計測）
+      ctx.filter = 'none';
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+      // 中央100x100pxを切り出して平均明るさを計算
       const size = 100;
-      const x = canvas.width / 2 - size / 2;
-      const y = canvas.height / 2 - size / 2;
-      const data = ctx.getImageData(x, y, size, size).data;
+      const x = (canvas.width - size) / 2;
+      const y = (canvas.height - size) / 2;
+      const imgData = ctx.getImageData(x, y, size, size);
       let sum = 0;
-      for (let i = 0; i < data.length; i += 4) sum += data[i];
-      const avg = sum / (data.length / 4);
+      for (let i = 0; i < imgData.data.length; i += 4) {
+        // RGB平均値で明るさ
+        sum += (imgData.data[i] + imgData.data[i + 1] + imgData.data[i + 2]) / 3;
+      }
+      const avg = sum / (imgData.data.length / 4);
       history.push({ v: avg, t: Date.now() });
       if (history.length > 512) history.shift();
     }
@@ -307,32 +314,31 @@
   };
 
   document.getElementById("shutter-button").onclick = () => {
-    // 撮影キャンバスに動画を描画しフィルター反映
+    // 撮影時は動画にかかっているフィルターをcanvasに反映して描画
     const tmp = document.createElement("canvas");
     tmp.width = canvas.width;
     tmp.height = canvas.height;
     const tc = tmp.getContext("2d");
 
-    // ぼかしはcanvasのfilterで対応
+    // blurはfValueによる計算
     const blurPx = fValue <= 10 ? Math.min((10 - fValue) * 2, 20) : 0;
     tc.filter = `blur(${blurPx}px)`;
     tc.drawImage(video, 0, 0, tmp.width, tmp.height);
 
-    // BPMによる色フィルターはピクセル操作で後処理
+    // BPMの色フィルターはピクセル操作でかける
     const imgData = tc.getImageData(0, 0, tmp.width, tmp.height);
     const data = imgData.data;
-
     for (let i = 0; i < data.length; i += 4) {
       let r = data[i], g = data[i + 1], b = data[i + 2];
       if (bpm > 0) {
         if (bpm < 80) {
           const ratio = bpm / 80;
-          r = r * 0;
+          r = 0;
           g = g * ratio;
           b = b * 1;
         } else {
           const ratio = Math.min((bpm - 80) / 120, 1);
-          r = r * ratio + (1 - ratio) * 0;
+          r = r * ratio;
           g = g * (1 - ratio);
           b = b * (1 - ratio);
         }
@@ -375,57 +381,3 @@
   });
 
   canvas.addEventListener("touchmove", e => {
-    if (e.touches.length === 2) {
-      const d = Math.hypot(
-        e.touches[0].clientX - e.touches[1].clientX,
-        e.touches[0].clientY - e.touches[1].clientY
-      );
-      scale += (d - lastPinch) * 0.005;
-      lastPinch = d;
-      scale = Math.min(Math.max(scale, 0.25), 4);
-      fValue = 16 / scale / 4;
-      fText.textContent = fValue.toFixed(1);
-      updateCircleSize();
-    }
-  });
-
-  // LocalStorage保存・復元
-  function saveToLocalStorage() {
-    try {
-      const items = [];
-      gallery.querySelectorAll(".entry").forEach(e => {
-        const img = e.querySelector("img");
-        const meta = e.querySelector(".meta").textContent;
-        items.push({ img: img.src, meta });
-      });
-      localStorage.setItem("fshutter_album", JSON.stringify(items));
-    } catch (e) {
-      console.warn("保存失敗", e);
-    }
-  }
-
-  function loadFromLocalStorage() {
-    try {
-      const raw = localStorage.getItem("fshutter_album");
-      if (!raw) return;
-      const items = JSON.parse(raw);
-      items.forEach(({ img, meta }) => {
-        const entry = document.createElement("div");
-        entry.className = "entry";
-        const image = document.createElement("img");
-        image.src = img;
-        const m = document.createElement("div");
-        m.className = "meta";
-        m.textContent = meta;
-        entry.appendChild(image);
-        entry.appendChild(m);
-        gallery.appendChild(entry);
-      });
-    } catch (e) {
-      console.warn("復元失敗", e);
-    }
-  }
-})();
-</script>
-</body>
-</html>
