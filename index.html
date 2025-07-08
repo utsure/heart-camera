@@ -130,7 +130,7 @@
 (async () => {
   const video = document.getElementById("video");
   const canvas = document.getElementById("canvas");
-  const graph = document.getElementById("graph");
+  const ctx = canvas.getContext("2d");
   const fValueText = document.getElementById("f-value");
   const bpmValueText = document.getElementById("bpm-value");
   const centerCircle = document.getElementById("center-circle");
@@ -138,7 +138,7 @@
   const gallery = document.getElementById("gallery");
   const albumButton = document.getElementById("album-button");
   const startBpmButton = document.getElementById("start-bpm-button");
-  const ctx = canvas.getContext("2d");
+  const graph = document.getElementById("graph");
   const gctx = graph.getContext("2d");
 
   let fValue = 4.0;
@@ -174,7 +174,8 @@
   }
 
   function loop() {
-    ctx.globalAlpha = Math.min(1.5, Math.max(0.1, (4 / fValue)));
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.globalAlpha = Math.min(1.0, Math.max(0.05, (fValue / 16))); // 小さいF値ほど透明度が高くなる → ブレて見える
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
     if (measuring) {
       const size = 100;
