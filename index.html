@@ -1,141 +1,339 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-  <meta charset="UTF-8">
-  <title>心拍数測定アプリ</title>
+  <meta charset="UTF-8" />
+  <title>F-Shutter Heart Camera</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
   <style>
-    body { font-family: sans-serif; text-align: center; }
-    #bpm { font-size: 2em; margin: 1em; }
-    #start { font-size: 1.2em; }
-    video { width: 80vw; max-width: 400px; margin: 1em auto; border-radius: 10px; }
+    body { 
+      margin: 0; 
+      overflow: hidden; 
+      background: #000; 
+      color: white; 
+      font-family: monospace, sans-serif;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
+    #canvas { 
+      touch-action: none; 
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+    #ui { 
+      position: absolute; 
+      top: 15px; 
+      left: 15px; 
+      z-index: 10; 
+      background: rgba(0,0,0,0.5);
+      padding: 10px;
+      border-radius: 8px;
+    }
+    .ui-item { font-size: 18px; color: white; margin-bottom: 5px; }
+    #bpm { color: #ff4757; font-weight: bold; }
+    #instructions {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      text-align: center;
+      background: rgba(0,0,0,0.7);
+      padding: 15px;
+      border-radius: 10px;
+      z-index: 20;
+    }
+    .button-container {
+      position: absolute;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      gap: 15px;
+      z-index: 10;
+    }
+    .button-container button {
+      width: 60px;
+      height: 60px;
+      border-radius: 50%;
+      border: 4px solid white;
+      background: rgba(255, 255, 255, 0.3);
+      font-size: 28px;
+      cursor: pointer;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
+    #capture-btn {
+      background: #ff4757;
+    }
   </style>
 </head>
 <body>
-  <h1>心拍数測定</h1>
-  <p>カメラに指を当てて「測定開始」を押してください</p>
-  <video id="video" autoplay playsinline></video>
-  <div>
-    <button id="start">測定開始</button>
-  </div>
-  <div id="bpm">-- BPM</div>
-  <div id="fval">F値: <span id="fnum">2.8</span></div>
-  <script>
-    const video = document.getElementById('video');
-    const bpmDisplay = document.getElementById('bpm');
-    const startBtn = document.getElementById('start');
-    let stream, animationId, data = [];
 
-    async function startCamera() {
-      stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" }, audio: false });
-      video.srcObject = stream;
+<div id="ui">
+  <div id="bpm" class="ui-item">BPM: ---</div>
+  <div id="fval-display" class="ui-item">F値: 4.0</div>
+</div>
+
+<div id="instructions">
+  <p>背面のカメラとライトを<br>指でそっと覆ってください</p>
+  <p>↓</p>
+  <p>下のライトボタン(💡)を押して<br>計測を開始します</p>
+</div>
+
+<canvas id="canvas"></canvas>
+
+<div class="button-container">
+  <button id="flash-btn">💡</button>
+  <button id="capture-btn">📸</button>
+</div>
+
+<script>
+let video, canvas, ctx;
+let videoTrack;
+let fValue = 4.0;
+let bpm = 0;
+let redValues = [];
+let timestamps = [];
+let scale = 1.0;
+let lastPinchDist = 0;
+let isFlashOn = false;
+
+const bpmText = document.getElementById("bpm");
+const fvalText = document.getElementById("fval-display");
+const instructions = document.getElementById("instructions");
+const flashBtn = document.getElementById("flash-btn");
+const captureBtn = document.getElementById("capture-btn");
+
+// --- 初期化処理 ---
+async function initCamera() {
+  video = document.createElement("video");
+  video.setAttribute("autoplay", true);
+  video.setAttribute("playsinline", true);
+
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ 
+      video: { 
+        facingMode: "environment",
+        width: { ideal: 1280 },
+        height: { ideal: 720 }
+      } 
+    });
+    video.srcObject = stream;
+    // ライト制御のためにトラックを保持
+    const tracks = stream.getVideoTracks();
+    if (tracks.length > 0) {
+      videoTrack = tracks[0];
+    }
+  } catch (err) {
+    alert("カメラの起動に失敗しました。ブラウザのカメラ利用を許可してください。また、このページはHTTPS接続である必要があります。\n" + err);
+    return;
+  }
+
+  video.addEventListener("loadeddata", () => {
+    setupCanvas();
+    requestAnimationFrame(draw);
+  });
+}
+
+// --- キャンバスと操作の設定 ---
+function setupCanvas() {
+  canvas = document.getElementById("canvas");
+  ctx = canvas.getContext("2d");
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight;
+
+  // PC: マウスホイールでF値変更
+  canvas.addEventListener("wheel", e => {
+    e.preventDefault();
+    scale += e.deltaY * -0.001;
+    updateFValue();
+  }, { passive: false });
+
+  // スマホ: ピンチ操作でF値変更
+  canvas.addEventListener("touchstart", e => {
+    if (e.touches.length === 2) {
+      lastPinchDist = dist(e.touches[0], e.touches[1]);
+    }
+  });
+
+  canvas.addEventListener("touchmove", e => {
+    e.preventDefault();
+    if (e.touches.length === 2) {
+      const currentDist = dist(e.touches[0], e.touches[1]);
+      scale += (currentDist - lastPinchDist) * 0.005;
+      lastPinchDist = currentDist;
+      updateFValue();
+    }
+  }, { passive: false });
+}
+
+function updateFValue() {
+  scale = Math.max(0.25, Math.min(scale, 4.0));
+  fValue = 16.0 / scale / 4.0;
+  fvalText.innerText = `F値: ${fValue.toFixed(1)}`;
+}
+
+function dist(p1, p2) {
+  return Math.sqrt(Math.pow(p1.clientX - p2.clientX, 2) + Math.pow(p1.clientY - p2.clientY, 2));
+}
+
+// --- 描画とBPM計算 ---
+function draw() {
+  // アスペクト比を保って映像を中央に描画
+  const videoRatio = video.videoWidth / video.videoHeight;
+  const canvasRatio = canvas.width / canvas.height;
+  let drawWidth, drawHeight, startX, startY;
+
+  if (videoRatio > canvasRatio) { // 横長の映像
+    drawHeight = canvas.height;
+    drawWidth = drawHeight * videoRatio;
+    startX = (canvas.width - drawWidth) / 2;
+    startY = 0;
+  } else { // 縦長の映像
+    drawWidth = canvas.width;
+    drawHeight = drawWidth / videoRatio;
+    startY = (canvas.height - drawHeight) / 2;
+    startX = 0;
+  }
+  ctx.drawImage(video, startX, startY, drawWidth, drawHeight);
+
+  if (isFlashOn) {
+    // 中央の20x20ピクセルの平均的な赤色を取得
+    const frame = ctx.getImageData(canvas.width / 2 - 10, canvas.height / 2 - 10, 20, 20);
+    let sumRed = 0;
+    for (let i = 0; i < frame.data.length; i += 4) {
+      sumRed += frame.data[i];
+    }
+    const avgRed = sumRed / (frame.data.length / 4);
+    
+    // データが有効な場合のみBPM計算
+    if (!isNaN(avgRed)) {
+        redValues.push(avgRed);
+        timestamps.push(Date.now());
     }
 
-    function getFrameBrightness(ctx, w, h) {
-      const frame = ctx.getImageData(0, 0, w, h);
-      let sum = 0;
-      for (let i = 0; i < frame.data.length; i += 4) {
-        // 赤成分だけ使う
-        sum += frame.data[i];
-      }
-      return sum / (frame.data.length / 4);
+    // データを5秒分（30fps換算で150フレーム）に制限
+    if (redValues.length > 150) {
+      redValues.shift();
+      timestamps.shift();
     }
-
-    function detectBPM(brightnessArr, fps) {
-      // 簡易ピーク検出
-      let peaks = [];
-      for (let i = 1; i < brightnessArr.length - 1; i++) {
-        if (brightnessArr[i] > brightnessArr[i-1] && brightnessArr[i] > brightnessArr[i+1]) {
-          peaks.push(i);
-        }
-      }
-      if (peaks.length < 2) return null;
-      let intervals = [];
-      for (let i = 1; i < peaks.length; i++) {
-        intervals.push((peaks[i] - peaks[i-1]) / fps);
-      }
-      let avg = intervals.reduce((a, b) => a + b, 0) / intervals.length;
-      return Math.round(60 / avg);
-    }
-
-    function bpmToShutterSpeed(bpm) {
-      // 1分間の心拍数→1拍の間隔（秒）
-      // 例: 60BPM→1秒, 120BPM→0.5秒
-      if (!bpm || bpm <= 0) return null;
-      const sec = 60 / bpm;
-      if (sec >= 1) {
-        return sec.toFixed(2) + ' 秒';
+    
+    if (redValues.length >= 60) {
+      bpm = calcBPM(redValues, timestamps);
+      if (bpm > 40 && bpm < 200) {
+         bpmText.innerText = `BPM: ${bpm}`;
       } else {
-        return '1/' + Math.round(1 / sec) + ' 秒';
+         bpmText.innerText = `BPM: ---`;
       }
     }
+  }
 
-    let fNumber = 2.8;
-    const fnumSpan = document.getElementById('fnum');
-    let lastDist = null;
-    // ピンチイン・ピンチアウトでF値を変更
-    video.addEventListener('touchstart', function(e) {
-      if (e.touches.length === 2) {
-        lastDist = Math.abs(e.touches[0].clientX - e.touches[1].clientX);
-      }
-    });
-    video.addEventListener('touchmove', function(e) {
-      if (e.touches.length === 2 && lastDist !== null) {
-        let newDist = Math.abs(e.touches[0].clientX - e.touches[1].clientX);
-        if (Math.abs(newDist - lastDist) > 10) {
-          if (newDist > lastDist) {
-            fNumber = Math.max(1.2, fNumber - 0.2); // ピンチアウトでF値小さく
-          } else {
-            fNumber = Math.min(16, fNumber + 0.2); // ピンチインでF値大きく
-          }
-          fNumber = Math.round(fNumber * 10) / 10;
-          fnumSpan.textContent = fNumber;
-          lastDist = newDist;
-        }
-      }
-    });
-    video.addEventListener('touchend', function(e) {
-      if (e.touches.length < 2) lastDist = null;
-    });
+  // 絞りを表現するUI
+  ctx.fillStyle = "rgba(0,0,0,0.8)";
+  ctx.beginPath();
+  const outerRadius = Math.max(canvas.width, canvas.height);
+  ctx.arc(canvas.width / 2, canvas.height / 2, outerRadius, 0, 2 * Math.PI);
+  const innerRadius = 50 * scale; // F値と連動
+  ctx.arc(canvas.width / 2, canvas.height / 2, innerRadius, 0, 2 * Math.PI, true);
+  ctx.fill();
 
-    startBtn.onclick = async () => {
-      bpmDisplay.textContent = "-- BPM";
-      data = [];
-      await startCamera();
-      const canvas = document.createElement('canvas');
-      const ctx = canvas.getContext('2d');
-      let w, h, startTime;
-      let fps = 30;
-      let frames = 0;
-      startBtn.disabled = true;
+  requestAnimationFrame(draw);
+}
 
-      function capture() {
-        if (!w || !h) {
-          w = video.videoWidth;
-          h = video.videoHeight;
-          canvas.width = w;
-          canvas.height = h;
+// よりロバストなBPM計算アルゴリズム
+function calcBPM(signal, times) {
+    if (signal.length < 2) return 0;
+
+    // 信号を平滑化（移動平均）
+    const smoothed = [];
+    for (let i = 2; i < signal.length - 2; i++) {
+        const avg = (signal[i-2] + signal[i-1] + signal[i] + signal[i+1] + signal[i+2]) / 5;
+        smoothed.push(avg);
+    }
+    const smoothedTimes = times.slice(2, -2);
+    
+    const mean = smoothed.reduce((a, b) => a + b) / smoothed.length;
+    
+    // 平均より高い値を持つ部分でピークを探す
+    const peaks = [];
+    for (let i = 1; i < smoothed.length - 1; i++) {
+        if (smoothed[i] > mean && smoothed[i] > smoothed[i-1] && smoothed[i] > smoothed[i+1]) {
+            peaks.push(smoothedTimes[i]);
         }
-        ctx.drawImage(video, 0, 0, w, h);
-        data.push(getFrameBrightness(ctx, w, h));
-        frames++;
-        if (!startTime) startTime = performance.now();
-        if ((performance.now() - startTime) < 10000) {
-          animationId = requestAnimationFrame(capture);
-        } else {
-          // 測定終了
-          stream.getTracks().forEach(t => t.stop());
-          let bpm = detectBPM(data, fps);
-          if (bpm) {
-            const shutter = bpmToShutterSpeed(bpm);
-            bpmDisplay.textContent = shutter ? `心拍数 = シャッタースピード: ${shutter}` : "測定失敗";
-          } else {
-            bpmDisplay.textContent = "測定失敗";
-          }
-          startBtn.disabled = false;
-        }
-      }
-      capture();
-    };
-  </script>
+    }
+
+    if (peaks.length < 2) return 0;
+
+    const intervals = [];
+    for (let i = 1; i < peaks.length; i++) {
+        intervals.push(peaks[i] - peaks[i-1]);
+    }
+    
+    // 外れ値を除去（メディアンの±50%）
+    intervals.sort((a, b) => a - b);
+    const median = intervals[Math.floor(intervals.length / 2)];
+    const validIntervals = intervals.filter(interval => interval > median * 0.5 && interval < median * 1.5);
+
+    if (validIntervals.length < 1) return 0;
+    
+    const avgInterval = validIntervals.reduce((a, b) => a + b) / validIntervals.length;
+    
+    if (isNaN(avgInterval) || avgInterval === 0) return 0;
+    
+    return Math.round(60000 / avgInterval);
+}
+
+
+// --- ボタンイベント ---
+flashBtn.addEventListener("click", () => {
+    if (!videoTrack) return;
+    isFlashOn = !isFlashOn;
+    videoTrack.applyConstraints({
+      advanced: [{ torch: isFlashOn }]
+    });
+    flashBtn.style.background = isFlashOn ? "#ffdd59" : "rgba(255, 255, 255, 0.3)";
+    if(isFlashOn) {
+        instructions.style.display = 'none'; // ライトオンで説明を消す
+    }
+});
+
+captureBtn.addEventListener("click", () => {
+  // F値とBPMで明るさを調整する
+  const tempCanvas = document.createElement('canvas');
+  const tempCtx = tempCanvas.getContext('2d');
+  tempCanvas.width = canvas.width;
+  tempCanvas.height = canvas.height;
+  
+  // 現在の映像をそのまま描画
+  tempCtx.drawImage(canvas, 0, 0);
+  
+  const imageData = tempCtx.getImageData(0, 0, tempCanvas.width, tempCanvas.height);
+  const data = imageData.data;
+  
+  // 明るさの調整係数 (BPMが60の時を基準)
+  // F値が小さい（明るい）ほど、BPMが速いほど、写真は暗くなる
+  const currentBpm = (bpm > 40 && bpm < 200) ? bpm : 60; // 不安定なBPM値の場合は60を基準とする
+  const factor = 2.0 / (fValue * (currentBpm / 60));
+
+  for (let i = 0; i < data.length; i += 4) {
+    data[i]   = Math.min(255, data[i] * factor);     // Red
+    data[i+1] = Math.min(255, data[i+1] * factor); // Green
+    data[i+2] = Math.min(255, data[i+2] * factor); // Blue
+  }
+  tempCtx.putImageData(imageData, 0, 0);
+
+  // 画像として保存
+  const link = document.createElement('a');
+  link.href = tempCanvas.toDataURL("image/jpeg", 0.9); // JPEG形式で保存
+  link.download = `heart_camera_f${fValue.toFixed(1)}_bpm${currentBpm}.jpg`;
+  link.click();
+});
+
+// アプリケーション開始
+initCamera();
+
+</script>
 </body>
 </html>
