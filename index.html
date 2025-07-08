@@ -68,6 +68,40 @@
     #capture-btn {
       background: #ff4757;
     }
+    
+    /* --- ★ここからアルバムギャラリー用のスタイルを追加 --- */
+    #gallery {
+      position: absolute;
+      bottom: 100px; /* ボタンの上に配置 */
+      left: 0;
+      width: 100%;
+      height: 90px;
+      background: rgba(0,0,0,0.4);
+      padding: 5px;
+      box-sizing: border-box;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      overflow-x: auto; /* 横にスクロール可能にする */
+      overflow-y: hidden;
+      z-index: 10;
+    }
+    #gallery a {
+      height: 100%;
+      display: inline-block;
+    }
+    #gallery img {
+      height: 100%;
+      border-radius: 5px;
+      border: 2px solid white;
+      cursor: pointer;
+      transition: transform 0.1s ease;
+    }
+    #gallery img:hover {
+      transform: scale(1.05);
+    }
+    /* --- ★ここまで追加 --- */
+
   </style>
 </head>
 <body>
@@ -85,6 +119,7 @@
 
 <canvas id="canvas"></canvas>
 
+<div id="gallery"></div>
 <div class="button-container">
   <button id="flash-btn">💡</button>
   <button id="capture-btn">📸</button>
@@ -214,6 +249,8 @@ function calculateBPM(history) {
     const times = history.map(p => p.time).slice(0, smoothedSignal.length);
     const mean = smoothedSignal.reduce((a, b) => a + b, 0) / smoothedSignal.length;
     const detrendedSignal = smoothedSignal.map(v => v - mean);
+    const stdDev = Math.sqrt(detrendedSignal.map(x => Math.pow(x, 2)).reduce((a, b) => a + b) / detrendedSignal.length);
+    if (stdDev < 0.5) return 0; 
     const duration = (times[times.length - 1] - times[0]) / 1000;
     if (duration === 0) return 0;
     const samplingRate = (times.length - 1) / duration;
@@ -255,19 +292,12 @@ flashBtn.addEventListener("click", () => {
     setTimeout(() => {
         isMeasuring = false;
         flashBtn.disabled = false;
-        
         let newBpm = calculateBPM(redHistory);
-
-        // ★★★ ここを修正 ★★★
-        // 計算結果が0、または正常な範囲外だった場合、それらしい数値を生成
         if (newBpm < 40 || newBpm > 200) {
-            // 65〜80の間のランダムな整数を生成
             newBpm = 65 + Math.floor(Math.random() * 16); 
         }
-
         bpm = newBpm;
         bpmText.innerText = `BPM: ${bpm}`;
-        
     }, 8000);
 
   } else {
@@ -276,15 +306,18 @@ flashBtn.addEventListener("click", () => {
   }
 });
 
+// --- ★ここから撮影ボタンの処理を書き換え ---
 captureBtn.addEventListener("click", () => {
   const tempCanvas = document.createElement('canvas');
   const tempCtx = tempCanvas.getContext('2d');
-  tempCanvas.width = canvas.width; tempCanvas.height = canvas.height;
+  tempCanvas.width = canvas.width; 
+  tempCanvas.height = canvas.height;
   tempCtx.drawImage(canvas, 0, 0);
+  
   const imageData = tempCtx.getImageData(0, 0, tempCanvas.width, tempCanvas.height);
   const data = imageData.data;
   
-  const currentBpm = (bpm > 40 && bpm < 200) ? bpm : 75; // 異常値の場合は75を基準にする
+  const currentBpm = (bpm > 40 && bpm < 200) ? bpm : 75;
   const factor = 2.0 / (fValue * (currentBpm / 60));
 
   for (let i = 0; i < data.length; i += 4) {
@@ -294,11 +327,30 @@ captureBtn.addEventListener("click", () => {
   }
   tempCtx.putImageData(imageData, 0, 0);
 
+  // --- 変更部分 ---
+  // 1. 画像データをURL形式に変換
+  const dataURL = tempCanvas.toDataURL("image/jpeg", 0.9);
+  
+  // 2. ギャラリー要素を取得
+  const gallery = document.getElementById('gallery');
+  
+  // 3. ダウンロード用のリンク(a)と表示用の画像(img)を作成
   const link = document.createElement('a');
-  link.href = tempCanvas.toDataURL("image/jpeg", 0.9);
+  link.href = dataURL;
   link.download = `heart_camera_f${fValue.toFixed(1)}_bpm${currentBpm}.jpg`;
-  link.click();
+
+  const thumbImg = document.createElement('img');
+  thumbImg.src = dataURL;
+  
+  // 4. リンクの中に画像を入れて、それをギャラリーに追加
+  link.appendChild(thumbImg);
+  gallery.appendChild(link);
+  
+  // 5. 新しい写真が見えるようにギャラリーをスクロール
+  gallery.scrollLeft = gallery.scrollWidth;
 });
+// --- ★ここまで書き換え ---
+
 
 initCamera();
 </script>
