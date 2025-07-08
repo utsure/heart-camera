@@ -83,8 +83,6 @@
       top: 50%;
       left: 50%;
       transform: translate(-50%, -50%);
-      width: 300px;
-      height: 300px;
       border: 3px solid white;
       border-radius: 50%;
       display: flex;
@@ -159,11 +157,10 @@
   let bpm = 0;
   let measuring = false;
   let history = [];
-  let videoTrack;
+  let bpmTimer;
 
   const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
   video.srcObject = stream;
-  videoTrack = stream.getVideoTracks()[0];
 
   function resize() {
     canvas.width = video.videoWidth;
@@ -182,7 +179,7 @@
     const minF = 1.0, maxF = 16.0;
     fValue = Math.min(maxF, Math.max(minF, newFval));
     fValueText.textContent = fValue.toFixed(1);
-    const size = 150 + ((fValue - 1.0) / 15) * 150;
+    const size = 300 - ((fValue - 1.0) / 15) * 150; // F値が小さいと円が大きくなる
     centerCircle.style.width = `${size}px`;
     centerCircle.style.height = `${size}px`;
   }
@@ -196,35 +193,68 @@
       const dist = Math.hypot(dx, dy);
       if (initialPinch != null) {
         const diff = dist - initialPinch;
-        updateFvalUI(fValue + diff * 0.01);
+        updateFvalUI(fValue - diff * 0.01); // 指の動きと円の動きを一致させる
       }
       initialPinch = dist;
     }
   }, { passive: false });
   window.addEventListener("touchend", () => { initialPinch = null });
 
-  shutterButton.addEventListener("click", () => {
-    // 映像をcanvasに描画
+  function startBPMMeasurement() {
+    measuring = true;
+    history = [];
+    bpmValueText.textContent = "測定中...";
+
+    if (bpmTimer) clearTimeout(bpmTimer);
+    bpmTimer = setTimeout(() => {
+      measuring = false;
+      bpm = calculateBPM();
+      bpmValueText.textContent = bpm > 0 ? Math.round(bpm) : "---";
+    }, 8000);
+  }
+
+  function calculateBPM() {
+    if (history.length < 2) return 0;
+    const times = history.map(d => d.t);
+    const values = history.map(d => d.v);
+    const mean = values.reduce((a,b)=>a+b)/values.length;
+    const peaks = [];
+    for (let i = 1; i < values.length - 1; i++) {
+      if (values[i] > mean && values[i] > values[i-1] && values[i] > values[i+1]) {
+        peaks.push(times[i]);
+      }
+    }
+    if (peaks.length < 2) return 0;
+    const intervals = peaks.slice(1).map((t,i) => t - peaks[i]);
+    const avgInterval = intervals.reduce((a,b)=>a+b)/intervals.length;
+    return 60000 / avgInterval;
+  }
+
+  function loop() {
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-
-    // フィルター適用（F値とBPMに応じて）
-    if (fValue < 10) {
-      ctx.filter = 'blur(3px)';
-    } else {
-      ctx.filter = 'none';
+    if (measuring) {
+      const size = 100;
+      const x = canvas.width/2 - size/2;
+      const y = canvas.height/2 - size/2;
+      const data = ctx.getImageData(x, y, size, size).data;
+      let sum = 0;
+      for (let i = 0; i < data.length; i += 4) sum += data[i];
+      const avg = sum / (data.length / 4);
+      history.push({ v: avg, t: Date.now() });
+      if (history.length > 300) history.shift();
     }
+    requestAnimationFrame(loop);
+  }
 
-    if (bpm > 80) {
-      ctx.globalAlpha = 0.7; // 暗くする
-    } else {
-      ctx.globalAlpha = 1.0; // 明るく保つ
-    }
-
+  shutterButton.addEventListener("click", () => {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    if (fValue < 10) ctx.filter = 'blur(3px)';
+    else ctx.filter = 'none';
+    ctx.globalAlpha = bpm > 80 ? 0.7 : 1.0;
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
     ctx.filter = 'none';
     ctx.globalAlpha = 1.0;
 
-    // 保存
     const url = canvas.toDataURL("image/jpeg", 0.9);
     const entry = document.createElement("div");
     entry.className = "entry";
@@ -238,6 +268,8 @@
     `;
     gallery.appendChild(entry);
   });
+
+  startBpmButton.addEventListener("click", startBPMMeasurement);
 })();
 </script>
 </body>
