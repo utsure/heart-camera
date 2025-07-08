@@ -189,7 +189,7 @@
 
   function loop() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.globalAlpha = Math.min(1.0, Math.max(0.05, (fValue / 16)));
+    ctx.globalAlpha = Math.max(0.05, Math.min(1.0, 1 - fValue / 16));
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
     if (measuring) {
       const size = 100;
@@ -262,7 +262,23 @@
 
   shutterButton.addEventListener("click", () => {
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-    const url = canvas.toDataURL("image/jpeg", 0.9);
+    const imgCanvas = document.createElement("canvas");
+    imgCanvas.width = canvas.width;
+    imgCanvas.height = canvas.height;
+    const imgCtx = imgCanvas.getContext("2d");
+    imgCtx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    if (fValue < 10) {
+      imgCtx.fillStyle = "rgba(255,255,255,0.1)";
+      imgCtx.fillRect(0, 0, canvas.width, canvas.height);
+    }
+    if (bpm > 80) {
+      imgCtx.fillStyle = "rgba(0,0,0,0.3)";
+      imgCtx.fillRect(0, 0, canvas.width, canvas.height);
+    } else if (bpm > 0 && bpm <= 80) {
+      imgCtx.fillStyle = "rgba(255,255,255,0.1)";
+      imgCtx.fillRect(0, 0, canvas.width, canvas.height);
+    }
+    const url = imgCanvas.toDataURL("image/jpeg", 0.9);
     const now = new Date();
     const timestamp = now.toLocaleString();
     const entry = document.createElement("div");
