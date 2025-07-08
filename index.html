@@ -95,9 +95,10 @@ let video, canvas, ctx;
 let videoTrack;
 let fValue = 4.0;
 let bpm = 0;
-let redHistory = []; // 名前を変更
+let redHistory = [];
 let lastPinchDist = 0;
 let isFlashOn = false;
+let isMeasuring = false;
 let scale = 1.0;
 
 const bpmText = document.getElementById("bpm");
@@ -165,7 +166,6 @@ function updateFValue() {
 
 function dist(p1, p2) { return Math.sqrt(Math.pow(p1.clientX - p2.clientX, 2) + Math.pow(p1.clientY - p2.clientY, 2)); }
 
-let lastBpmTime = 0;
 function draw() {
   const videoRatio = video.videoWidth / video.videoHeight;
   const canvasRatio = canvas.width / canvas.height;
@@ -179,7 +179,7 @@ function draw() {
   }
   ctx.drawImage(video, startX, startY, drawWidth, drawHeight);
 
-  if (isFlashOn) {
+  if (isMeasuring) {
     const frame = ctx.getImageData(canvas.width / 2 - 10, canvas.height / 2 - 10, 20, 20);
     let sumRed = 0;
     for (let i = 0; i < frame.data.length; i += 4) sumRed += frame.data[i];
@@ -187,18 +187,6 @@ function draw() {
     
     if (!isNaN(avgRed)) {
       redHistory.push({ value: avgRed, time: Date.now() });
-    }
-    if (redHistory.length > 200) redHistory.shift();
-    
-    const now = Date.now();
-    if (redHistory.length > 100 && now - lastBpmTime > 1000) {
-      bpmText.innerText = `BPM: 計測中...`;
-      const newBpm = calculateBPM_Autocorrelation(redHistory);
-      if (newBpm > 40 && newBpm < 200) {
-        bpm = newBpm;
-        bpmText.innerText = `BPM: ${bpm}`;
-      }
-      lastBpmTime = now;
     }
   }
 
@@ -213,28 +201,23 @@ function draw() {
   requestAnimationFrame(draw);
 }
 
-// --- 新しいBPM計算アルゴリズム (自己相関法) ---
 function calculateBPM_Autocorrelation(history) {
+    if (history.length < 50) return 0; // データが少なすぎる場合は0を返す
+
     const signal = history.map(p => p.value);
     const times = history.map(p => p.time);
-
-    // 1. 信号の平均値を0にする (Detrend)
     const mean = signal.reduce((a, b) => a + b, 0) / signal.length;
     const detrendedSignal = signal.map(v => v - mean);
-
-    // 2. サンプリングレートを計算
-    const duration = (times[times.length - 1] - times[0]) / 1000; // in seconds
+    const duration = (times[times.length - 1] - times[0]) / 1000;
     const samplingRate = (times.length - 1) / duration;
-
-    // 3. 自己相関を計算するラグの範囲を決める (40BPMから200BPM)
     const minLag = Math.floor(samplingRate * (60 / 200)); 
     const maxLag = Math.ceil(samplingRate * (60 / 40));
     
     let bestLag = 0;
     let maxCorr = 0;
 
-    // 4. 自己相関を計算
     for (let lag = minLag; lag <= maxLag; lag++) {
+        if (lag >= detrendedSignal.length) break;
         let corr = 0;
         for (let i = 0; i < detrendedSignal.length - lag; i++) {
             corr += detrendedSignal[i] * detrendedSignal[i + lag];
@@ -246,21 +229,42 @@ function calculateBPM_Autocorrelation(history) {
     }
 
     if (bestLag === 0) return 0;
-
-    // 5. 最も相関の高かったラグからBPMを計算
-    const period = bestLag / samplingRate; // in seconds
+    const period = bestLag / samplingRate;
     return Math.round(60 / period);
 }
 
-
 flashBtn.addEventListener("click", () => {
-  if (!videoTrack) return;
+  if (!videoTrack || isMeasuring) return;
+  
   isFlashOn = !isFlashOn;
-  redHistory = []; // リセット
-  bpmText.innerText = 'BPM: ---';
   videoTrack.applyConstraints({ advanced: [{ torch: isFlashOn }] });
   flashBtn.style.background = isFlashOn ? "#ffdd59" : "rgba(255, 255, 255, 0.3)";
-  if (isFlashOn) instructions.style.display = 'none';
+
+  if (isFlashOn) {
+    instructions.style.display = 'none';
+    isMeasuring = true;
+    redHistory = [];
+    bpmText.innerText = 'BPM: 計測中...';
+    flashBtn.disabled = true; // 計測中はボタンを無効化
+
+    // 8秒後に計測を終了して結果を出す
+    setTimeout(() => {
+        isMeasuring = false;
+        flashBtn.disabled = false; // ボタンを有効化
+        const newBpm = calculateBPM_Autocorrelation(redHistory);
+        if (newBpm > 40 && newBpm < 200) {
+            bpm = newBpm;
+            bpmText.innerText = `BPM: ${bpm}`;
+        } else {
+            bpm = 0; // 失敗した場合は0に
+            bpmText.innerText = `BPM: 失敗`;
+        }
+    }, 8000); // 8秒 = 8000ミリ秒
+
+  } else {
+    bpmText.innerText = 'BPM: ---';
+    isMeasuring = false;
+  }
 });
 
 captureBtn.addEventListener("click", () => {
