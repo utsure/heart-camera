@@ -46,7 +46,7 @@
       cursor: pointer;
     }
     #gallery {
-      display: none;
+      display: flex;
       flex-wrap: wrap;
       gap: 10px;
       position: absolute;
@@ -146,12 +146,16 @@
   const canvas = document.getElementById("canvas");
   const ctx = canvas.getContext("2d");
   const bpmText = document.getElementById("bpm-value");
+  const fText = document.getElementById("f-value");
   const graph = document.getElementById("graph");
   const gctx = graph.getContext("2d");
+  const gallery = document.getElementById("gallery");
 
   let measuring = false;
   let bpm = 0;
   let history = [];
+  let scale = 1;
+  let fValue = 4;
 
   const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
   video.srcObject = stream;
@@ -215,6 +219,55 @@
       bpmText.textContent = bpm > 0 ? Math.round(bpm) : "---";
     }, 8000);
   };
+
+  document.getElementById("shutter-button").onclick = () => {
+    const tmp = document.createElement("canvas");
+    tmp.width = canvas.width;
+    tmp.height = canvas.height;
+    const tc = tmp.getContext("2d");
+    tc.filter = `brightness(1) blur(${(4 - fValue) * 2}px)`;
+    tc.drawImage(canvas, 0, 0);
+    const url = tmp.toDataURL("image/jpeg", 0.9);
+    const entry = document.createElement("div");
+    entry.className = "entry";
+    const img = document.createElement("img");
+    img.src = url;
+    const meta = document.createElement("div");
+    meta.className = "meta";
+    meta.textContent = `F${fValue.toFixed(1)}\n${bpm}BPM`;
+    entry.appendChild(img);
+    entry.appendChild(meta);
+    gallery.appendChild(entry);
+  };
+
+  canvas.onwheel = (e) => {
+    e.preventDefault();
+    scale += -e.deltaY * 0.001;
+    scale = Math.max(0.25, Math.min(scale, 4));
+    fValue = 16 / scale / 4;
+    fText.textContent = fValue.toFixed(1);
+  };
+
+  canvas.addEventListener("touchstart", (e) => {
+    if (e.touches.length === 2)
+      lastPinch = Math.hypot(
+        e.touches[0].clientX - e.touches[1].clientX,
+        e.touches[0].clientY - e.touches[1].clientY
+      );
+  });
+  canvas.addEventListener("touchmove", (e) => {
+    if (e.touches.length === 2) {
+      const d = Math.hypot(
+        e.touches[0].clientX - e.touches[1].clientX,
+        e.touches[0].clientY - e.touches[1].clientY
+      );
+      scale += (d - lastPinch) * 0.005;
+      lastPinch = d;
+      scale = Math.max(0.25, Math.min(scale, 4));
+      fValue = 16 / scale / 4;
+      fText.textContent = fValue.toFixed(1);
+    }
+  });
 
   function loop() {
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
