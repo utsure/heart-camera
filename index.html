@@ -46,11 +46,11 @@
       cursor: pointer;
     }
     #gallery {
-      display: flex;
+      display: none;
       flex-wrap: wrap;
       gap: 10px;
       position: absolute;
-      bottom: 80px;
+      bottom: 100px;
       left: 20px;
       max-width: 80vw;
       z-index: 10;
@@ -78,6 +78,7 @@
     .entry .meta {
       text-align: center;
       line-height: 1.2;
+      white-space: pre-wrap;
     }
     #center-circle {
       top: 50%;
@@ -91,7 +92,9 @@
       font-size: 24px;
       font-weight: bold;
       user-select: none;
-      transition: border-color 0.3s, width 0.3s, height 0.3s;
+      width: 150px;
+      height: 150px;
+      transition: width 0.2s, height 0.2s;
     }
     #graph-container {
       top: 50%;
@@ -150,12 +153,14 @@
   const graph = document.getElementById("graph");
   const gctx = graph.getContext("2d");
   const gallery = document.getElementById("gallery");
+  const centerCircle = document.getElementById("center-circle");
 
   let measuring = false;
   let bpm = 0;
   let history = [];
   let scale = 1;
   let fValue = 4;
+  let lastPinch = 0;
 
   const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
   video.srcObject = stream;
@@ -234,18 +239,15 @@
     img.src = url;
     const meta = document.createElement("div");
     meta.className = "meta";
-    meta.textContent = `F${fValue.toFixed(1)}\n${bpm}BPM`;
+    const now = new Date();
+    meta.textContent = `F${fValue.toFixed(1)}\n${bpm} BPM\n${now.toLocaleString()}`;
     entry.appendChild(img);
     entry.appendChild(meta);
     gallery.appendChild(entry);
   };
 
-  canvas.onwheel = (e) => {
-    e.preventDefault();
-    scale += -e.deltaY * 0.001;
-    scale = Math.max(0.25, Math.min(scale, 4));
-    fValue = 16 / scale / 4;
-    fText.textContent = fValue.toFixed(1);
+  document.getElementById("album-button").onclick = () => {
+    gallery.style.display = gallery.style.display === "none" ? "flex" : "none";
   };
 
   canvas.addEventListener("touchstart", (e) => {
@@ -266,6 +268,9 @@
       scale = Math.max(0.25, Math.min(scale, 4));
       fValue = 16 / scale / 4;
       fText.textContent = fValue.toFixed(1);
+      const radius = 150 * scale;
+      centerCircle.style.width = `${radius}px`;
+      centerCircle.style.height = `${radius}px`;
     }
   });
 
