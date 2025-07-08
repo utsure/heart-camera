@@ -162,6 +162,21 @@
   let fValue = 4;
   let lastPinch = 0;
 
+  // アルバムのロード
+  const savedImages = JSON.parse(localStorage.getItem("fshutter-album") || "[]");
+  for (const entryData of savedImages) {
+    const entry = document.createElement("div");
+    entry.className = "entry";
+    const img = document.createElement("img");
+    img.src = entryData.url;
+    const meta = document.createElement("div");
+    meta.className = "meta";
+    meta.textContent = entryData.meta;
+    entry.appendChild(img);
+    entry.appendChild(meta);
+    gallery.appendChild(entry);
+  }
+
   const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
   video.srcObject = stream;
 
@@ -225,12 +240,18 @@
     }, 8000);
   };
 
+  function getDynamicFilter(bpm, fval) {
+    const blur = Math.max(0, (4 - fval) * 4);
+    const hue = bpm < 60 ? 180 : bpm > 100 ? 0 : 180 - ((bpm - 60) / 40) * 180;
+    return `hue-rotate(${hue}deg) blur(${blur}px)`;
+  }
+
   document.getElementById("shutter-button").onclick = () => {
     const tmp = document.createElement("canvas");
     tmp.width = canvas.width;
     tmp.height = canvas.height;
     const tc = tmp.getContext("2d");
-    tc.filter = `brightness(1) blur(${(4 - fValue) * 2}px)`;
+    tc.filter = getDynamicFilter(bpm, fValue);
     tc.drawImage(canvas, 0, 0);
     const url = tmp.toDataURL("image/jpeg", 0.9);
     const entry = document.createElement("div");
@@ -240,10 +261,14 @@
     const meta = document.createElement("div");
     meta.className = "meta";
     const now = new Date();
-    meta.textContent = `F${fValue.toFixed(1)}\n${bpm} BPM\n${now.toLocaleString()}`;
+    const metaText = `F${fValue.toFixed(1)}\n${bpm} BPM\n${now.toLocaleString()}`;
+    meta.textContent = metaText;
     entry.appendChild(img);
     entry.appendChild(meta);
     gallery.appendChild(entry);
+
+    const newData = [...savedImages, { url, meta: metaText }];
+    localStorage.setItem("fshutter-album", JSON.stringify(newData));
   };
 
   document.getElementById("album-button").onclick = () => {
