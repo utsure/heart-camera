@@ -53,6 +53,7 @@
     border-radius: 5px;
     z-index: 10;
     font-size: 16px;
+    cursor: pointer;
   }
   
   /* 中央の円 (BPM測定トリガー) */
@@ -114,6 +115,15 @@
   /* 撮影した画像ギャラリー（機能は残すが非表示に） */
   #gallery {
     display: none;
+    position: absolute;
+    top: 20px;
+    right: 20px;
+    background: #000;
+    border: 2px solid white;
+    padding: 10px;
+    z-index: 20;
+    max-height: 300px;
+    overflow: auto;
   }
 </style>
 </head>
@@ -126,7 +136,7 @@
     BPM: <span id="bpm-value">---</span>
   </div>
 
-  <div id="album-box">アルバム</div>
+  <div id="album-box">アルバムを開く</div>
   
   <div id="center-circle">心のF値</div>
 
@@ -166,8 +176,7 @@
     const stream = await navigator.mediaDevices.getUserMedia({
       video: { 
         facingMode: "environment",
-        // ライトを点灯させるための設定
-        advanced: [{torch: true}]
+        advanced: [{torch: false}] // 初期状態はライトOFF
       }
     });
     video.srcObject = stream;
@@ -181,14 +190,13 @@
   function resize() {
     canvas.width = video.videoWidth;
     canvas.height = video.videoHeight;
-    // graphの解像度を設定
     const graphContainer = document.getElementById('graph-container');
     graph.width = graphContainer.clientWidth;
     graph.height = graphContainer.clientHeight;
   }
   video.addEventListener("loadeddata", () => {
     resize();
-    updateFvalUI(fValue); // 初期F値を表示
+    updateFvalUI(fValue);
     requestAnimationFrame(loop);
   });
   window.addEventListener("resize", resize);
@@ -197,40 +205,35 @@
   function updateFvalUI(newFval) {
     const minF = 1.0;
     const maxF = 16.0;
-    // F値を範囲内に収める
     fValue = Math.min(maxF, Math.max(minF, newFval));
     fValueText.innerText = fValue.toFixed(1);
   }
 
   // --- メインループ ---
   function loop() {
-    // F値に応じて映像の明るさを調整（グローバルアルファを利用）
     ctx.globalAlpha = Math.min(1.5, Math.max(0.1, (4 / fValue)));
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
     if (measuring) {
-      // 画面中央の100x100ピクセルの輝度を取得
       const size = 100;
       const x = canvas.width / 2 - size / 2;
       const y = canvas.height / 2 - size / 2;
       const imageData = ctx.getImageData(x, y, size, size).data;
       
       let sum = 0;
-      // 赤色の値(R)のみを合計して平均輝度を計算
       for (let i = 0; i < imageData.length; i += 4) {
         sum += imageData[i];
       }
       const avgBrightness = sum / (imageData.length / 4);
       
       history.push({ v: avgBrightness, t: Date.now() });
-      if (history.length > 300) history.shift(); // 履歴は最大300件
+      if (history.length > 300) history.shift();
       
       drawGraph();
     }
     requestAnimationFrame(loop);
   }
 
-  // --- グラフ描画 ---
   function drawGraph() {
     const arr = history.map(o => o.v);
     if (arr.length < 2) return;
@@ -241,12 +244,11 @@
     
     gctx.clearRect(0, 0, graph.width, graph.height);
     gctx.beginPath();
-    gctx.strokeStyle = "#0f8"; // グラフの色を緑に
-    gctx.lineWidth = 2.5; // 線を太く
-    gctx.lineJoin = 'round'; // 線の角を丸く
+    gctx.strokeStyle = "#0f8";
+    gctx.lineWidth = 2.5;
+    gctx.lineJoin = 'round';
     
     arr.forEach((v, i) => {
-      // グラフを縦に描画
       const x = graph.width - ((v - min) / (range + 1e-6)) * graph.width;
       const y = (i / (arr.length - 1)) * graph.height;
       i === 0 ? gctx.moveTo(x, y) : gctx.lineTo(x, y);
@@ -254,20 +256,18 @@
     gctx.stroke();
   }
 
-  // --- BPM計算（簡易的なピーク検出） ---
   function calcBPM() {
     if (history.length < 50) return 0;
     
     const times = history.map(h => h.t);
     const values = history.map(h => h.v);
-    const duration = (times[times.length - 1] - times[0]) / 1000; // 秒単位
+    const duration = (times[times.length - 1] - times[0]) / 1000;
     if (duration < 3) return 0;
 
     const mean = values.reduce((a, b) => a + b) / values.length;
     
     let peaks = [];
     for (let i = 1; i < values.length - 1; i++) {
-        // 平均より上で、かつ前後の値より大きい点をピークとする
         if (values[i] > mean && values[i] > values[i - 1] && values[i] > values[i + 1]) {
             peaks.push(times[i]);
         }
@@ -286,27 +286,38 @@
     const bpmCalc = 60000 / avgInterval;
     return (bpmCalc > 40 && bpmCalc < 200) ? bpmCalc : 0;
   }
-  
-  // --- イベントリスナー ---
 
-  // 中央の円クリックでBPM測定開始/停止
-  centerCircle.addEventListener("click", () => {
+  // --- イベントリスナー ---
+  centerCircle.addEventListener("click", async () => {
     measuring = !measuring;
     if (measuring) {
       history = [];
-      centerCircle.style.borderColor = "#0f8"; // 測定中は枠を緑に
+      centerCircle.style.borderColor = "#0f8";
       bpmValueText.innerText = "測定中...";
+
+      const capabilities = videoTrack.getCapabilities();
+      if (capabilities.torch) {
+        await videoTrack.applyConstraints({ advanced: [{ torch: true }] });
+      }
+
+      setTimeout(async () => {
+        measuring = false;
+        bpmValueText.innerText = "---";
+        centerCircle.style.borderColor = "white";
+        gctx.clearRect(0, 0, graph.width, graph.height);
+        if (capabilities.torch) {
+          await videoTrack.applyConstraints({ advanced: [{ torch: false }] });
+        }
+      }, 8000);
     } else {
-      centerCircle.style.borderColor = "white"; // 停止したら白に戻す
+      centerCircle.style.borderColor = "white";
       bpmValueText.innerText = "---";
       bpm = 0;
-      gctx.clearRect(0, 0, graph.width, graph.height); // グラフをクリア
+      gctx.clearRect(0, 0, graph.width, graph.height);
     }
   });
 
-  // シャッターボタンで撮影
   shutterButton.addEventListener("click", () => {
-    // 撮影時に画面を白く光らせる演出
     const flash = document.createElement('div');
     flash.style.position = 'absolute';
     flash.style.top = '0';
@@ -319,33 +330,40 @@
     document.body.appendChild(flash);
     setTimeout(() => flash.remove(), 150);
 
-    // 画像を保存
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
     const url = canvas.toDataURL("image/jpeg", 0.9);
     const img = document.createElement("img");
     img.src = url;
-    gallery.appendChild(img); // 非表示のギャラリーに追加
-    alert("写真が撮影されました！（このデモでは表示されません）");
+    img.style = "width:100px; margin:5px;";
+    gallery.appendChild(img);
   });
 
-  // マウスホイールでF値変更
-  window.addEventListener("wheel", (e) => {
-    const step = 0.5;
-    const newFval = fValue + (e.deltaY > 0 ? step : -step);
-    updateFvalUI(newFval);
+  document.getElementById("album-box").addEventListener("click", () => {
+    gallery.style.display = (gallery.style.display === "none") ? "block" : "none";
   });
 
-  // BPM表示更新（1秒ごと）
+  let touchStartY = 0;
+  window.addEventListener("touchstart", e => {
+    if (e.touches.length === 1) touchStartY = e.touches[0].clientY;
+  });
+  window.addEventListener("touchmove", e => {
+    if (e.touches.length === 1) {
+      const deltaY = touchStartY - e.touches[0].clientY;
+      const step = 0.1;
+      updateFvalUI(fValue + (deltaY > 0 ? step : -step));
+      touchStartY = e.touches[0].clientY;
+    }
+  });
+
   setInterval(() => {
     if (measuring) {
       const calculatedBpm = calcBPM();
       if (calculatedBpm > 0) {
-        // 急激な変動を抑えるため、少しずつBPMを更新
         bpm = bpm * 0.7 + calculatedBpm * 0.3;
         bpmValueText.innerText = Math.round(bpm);
       }
     }
   }, 1000);
-
 })();
 </script>
 </body>
