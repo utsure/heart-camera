@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no" />
-<title>F値＋BPMカメラ（簡易版）</title>
+<title>F値＋BPMカメラ</title>
 <style>
   html, body {
     margin: 0; padding: 0; height: 100%;
@@ -63,20 +63,22 @@
     border-color: #0a5;
     color: #000;
   }
-  #bpm-input {
-    font-size: 24px;
-    width: 100px;
+  #bpm-instructions {
+    margin-bottom: 20px;
+    font-size: 20px;
+    max-width: 320px;
     text-align: center;
-    border: 2px solid #0f8;
-    border-radius: 6px;
-    background: #222;
-    color: #0f8;
+  }
+  #bpm-status {
+    font-size: 36px;
+    margin-bottom: 30px;
   }
   #bpm-next-btn {
     margin-top: 30px;
     background: #0f8;
     border-color: #0a5;
     color: #000;
+    display: none;
   }
   #camera-screen {
     display: none;
@@ -168,8 +170,11 @@
 
   <!-- BPM測定画面 -->
   <div id="bpm-screen" role="main" aria-label="BPM測定画面" style="display:none;">
-    <div>BPM（シャッタースピード）を入力してください</div>
-    <input type="number" id="bpm-input" min="40" max="180" value="80" aria-label="BPM入力" />
+    <div id="bpm-instructions">
+      指先をカメラにかざして脈拍を測定してください。<br>
+      数秒かかります。
+    </div>
+    <div id="bpm-status" aria-live="polite">測定中…</div>
     <button id="bpm-next-btn" aria-label="次へ">次へ</button>
   </div>
 
@@ -204,7 +209,8 @@
   const fvalueCircle = document.getElementById("fvalue-circle");
   const fvalueSlider = document.getElementById("fvalue-slider");
   const nextBtn = document.getElementById("next-btn");
-  const bpmInput = document.getElementById("bpm-input");
+  const bpmInstructions = document.getElementById("bpm-instructions");
+  const bpmStatus = document.getElementById("bpm-status");
   const bpmNextBtn = document.getElementById("bpm-next-btn");
   const video = document.getElementById("video");
   const photoCanvas = document.getElementById("photo-canvas");
@@ -213,7 +219,7 @@
 
   const photoCtx = photoCanvas.getContext("2d");
 
-  // カメラ起動
+  // カメラ起動（動画ストリームは撮影画面用）
   let videoStream;
   try {
     videoStream = await navigator.mediaDevices.getUserMedia({video:{facingMode:"environment"}});
@@ -248,17 +254,98 @@
   nextBtn.addEventListener("click", () => {
     fvalueScreen.style.display = "none";
     bpmScreen.style.display = "flex";
-    bpmInput.value = 80;
+    bpmStatus.textContent = "測定中…";
+    bpmNextBtn.style.display = "none";
+    startBpmMeasurement();
   });
 
-  // BPM入力→次へで撮影画面へ
-  bpmNextBtn.addEventListener("click", () => {
-    let val = parseInt(bpmInput.value, 10);
-    if(isNaN(val) || val < 40 || val > 180){
-      alert("BPMは40〜180の数値で入力してください");
-      return;
+  // BPM自動測定関連
+
+  let bpmValues = [];
+  let lastBpm = null;
+  let measuring = false;
+
+  const canvasForBpm = document.createElement("canvas");
+  const ctxForBpm = canvasForBpm.getContext("2d");
+
+  async function startBpmMeasurement() {
+    measuring = true;
+    bpmValues = [];
+    lastBpm = null;
+
+    // 小さい映像サイズで処理軽減
+    canvasForBpm.width = 100;
+    canvasForBpm.height = 100;
+
+    if (!videoStream) {
+      try {
+        videoStream = await navigator.mediaDevices.getUserMedia({video:{facingMode:"environment"}});
+        video.srcObject = videoStream;
+      } catch(e) {
+        alert("カメラ起動に失敗しました:" + e);
+        return;
+      }
     }
-    bpm = val;
+
+    measurePulse();
+  }
+
+  // 脈拍測定用タイマーとデータ
+  let pulseTimestamps = [];
+  let lastBrightness = null;
+  let pulseDetectedTimes = [];
+
+  function measurePulse(){
+    if(!measuring) return;
+
+    ctxForBpm.drawImage(video, 0, 0, canvasForBpm.width, canvasForBpm.height);
+    const frame = ctxForBpm.getImageData(0,0,canvasForBpm.width,canvasForBpm.height);
+    // 指先の赤色成分平均を計算
+    let sumR = 0;
+    for(let i=0; i<frame.data.length; i+=4){
+      sumR += frame.data[i];
+    }
+    const avgR = sumR / (frame.data.length/4);
+
+    // 簡易ピーク検出（赤色の変動で脈拍を検出）
+    if(lastBrightness !== null){
+      if(avgR < lastBrightness * 0.95){ // 明度が少し下がった＝脈拍ピーク？（指をかざした状態想定）
+        let now = performance.now();
+        if(pulseTimestamps.length > 0){
+          let lastTime = pulseTimestamps[pulseTimestamps.length-1];
+          let diff = now - lastTime;
+          if(diff > 300 && diff < 2000){ // 間隔のバラツキ防止
+            pulseDetectedTimes.push(now);
+            if(pulseDetectedTimes.length > 5){
+              pulseDetectedTimes.shift();
+            }
+            // BPM計算（1分/平均間隔）
+            let intervals = [];
+            for(let i=1; i<pulseDetectedTimes.length; i++){
+              intervals.push(pulseDetectedTimes[i] - pulseDetectedTimes[i-1]);
+            }
+            let avgInterval = intervals.reduce((a,b) => a+b,0)/intervals.length;
+            let newBpm = Math.round(60000/avgInterval);
+            if(newBpm >= 40 && newBpm <= 180){
+              bpm = newBpm;
+              bpmStatus.textContent = `BPM: ${bpm}`;
+              bpmNextBtn.style.display = "inline-block";
+              lastBpm = bpm;
+            }
+          }
+        }
+        pulseTimestamps.push(now);
+      }
+    }
+    lastBrightness = avgR;
+
+    // 継続測定（約30fps）
+    requestAnimationFrame(measurePulse);
+  }
+
+  // BPM画面の次へで撮影画面へ
+  bpmNextBtn.addEventListener("click", () => {
+    measuring = false;
     bpmScreen.style.display = "none";
     cameraScreen.style.display = "block";
     startCamera();
@@ -314,30 +401,30 @@
     photoCtx.save();
     applyFilters(photoCtx, photoCanvas.width, photoCanvas.height);
 
-    // 描画
     photoCtx.drawImage(video, 0, 0, photoCanvas.width, photoCanvas.height);
+
     photoCtx.restore();
 
-    // 画像データ作成
-    const dataUrl = photoCanvas.toDataURL("image/png");
+    // 画像データ取得
+    const dataUrl = photoCanvas.toDataURL("image/jpeg", 0.9);
 
-    // アルバム追加
-    addPhotoToAlbum(dataUrl);
+    addPhotoToAlbum(dataUrl, fValue, bpm);
   });
 
-  // アルバムに追加
-  function addPhotoToAlbum(dataUrl){
-    const now = new Date();
+  // アルバムに写真追加
+  function addPhotoToAlbum(dataUrl, fValue, bpm){
     const entry = document.createElement("div");
     entry.className = "photo-entry";
 
     const thumb = document.createElement("img");
     thumb.className = "photo-thumb";
     thumb.src = dataUrl;
-    thumb.alt = `撮影画像 F値:${fValue.toFixed(1)} BPM:${bpm}`;
 
     const info = document.createElement("div");
     info.className = "photo-info";
+
+    const now = new Date();
+
     info.innerHTML =
       `<div>F値: ${fValue.toFixed(1)}</div>` +
       `<div>BPM: ${bpm}</div>` +
