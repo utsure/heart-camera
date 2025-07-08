@@ -22,7 +22,7 @@
       object-fit: cover;
       z-index: 1;
     }
-    #info-box, #album-button, #center-circle, #graph-container, #shutter-button {
+    #info-box, #album-button, #center-circle, #graph-container, #shutter-button, #start-bpm-button {
       z-index: 10;
       position: absolute;
     }
@@ -48,7 +48,7 @@
     #gallery {
       display: none;
       flex-wrap: wrap;
-      gap: 5px;
+      gap: 10px;
       position: absolute;
       bottom: 80px;
       left: 20px;
@@ -58,18 +58,33 @@
       padding: 10px;
       border-radius: 8px;
     }
-    #gallery img {
-      width: 60px;
-      height: 60px;
-      object-fit: cover;
-      border: 2px solid white;
+    .entry {
+      background: #222;
+      border: 1px solid #fff;
+      padding: 5px;
+      border-radius: 8px;
+      width: 80px;
+      color: #fff;
+      font-size: 12px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    .entry img {
+      width: 100%;
+      border-radius: 4px;
+      margin-bottom: 4px;
+    }
+    .entry .meta {
+      text-align: center;
+      line-height: 1.2;
     }
     #center-circle {
       top: 50%;
       left: 50%;
       transform: translate(-50%, -50%);
-      width: 200px;
-      height: 200px;
+      width: 300px;
+      height: 300px;
       border: 3px solid white;
       border-radius: 50%;
       display: flex;
@@ -112,7 +127,6 @@
       padding: 10px;
       border-radius: 6px;
       cursor: pointer;
-      z-index: 10;
     }
   </style>
 </head>
@@ -168,14 +182,14 @@
     const minF = 1.0, maxF = 16.0;
     fValue = Math.min(maxF, Math.max(minF, newFval));
     fValueText.textContent = fValue.toFixed(1);
-    const size = 200 - ((fValue - 1.0) / 15) * 100;
+    const size = 300 - ((fValue - 1.0) / 15) * 150;
     centerCircle.style.width = `${size}px`;
     centerCircle.style.height = `${size}px`;
   }
 
   function loop() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.globalAlpha = Math.min(1.0, Math.max(0.05, (fValue / 16))); // 小さいF値ほど透明度が高くなる → ブレて見える
+    ctx.globalAlpha = Math.min(1.0, Math.max(0.05, (fValue / 16)));
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
     if (measuring) {
       const size = 100;
@@ -237,8 +251,8 @@
       setTimeout(async () => {
         measuring = false;
         const result = calcBPM();
-        if (result > 0) bpmValueText.textContent = Math.round(result);
-        else bpmValueText.textContent = "---";
+        bpm = result > 0 ? Math.round(result) : 0;
+        bpmValueText.textContent = bpm > 0 ? bpm : "---";
         gctx.clearRect(0, 0, graph.width, graph.height);
         centerCircle.style.borderColor = "white";
         if (caps.torch) await videoTrack.applyConstraints({ advanced: [{ torch: false }] });
@@ -249,9 +263,18 @@
   shutterButton.addEventListener("click", () => {
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
     const url = canvas.toDataURL("image/jpeg", 0.9);
+    const now = new Date();
+    const timestamp = now.toLocaleString();
+    const entry = document.createElement("div");
+    entry.className = "entry";
     const img = document.createElement("img");
     img.src = url;
-    gallery.appendChild(img);
+    const meta = document.createElement("div");
+    meta.className = "meta";
+    meta.innerHTML = `${timestamp}<br>F: ${fValue.toFixed(1)}<br>BPM: ${bpm > 0 ? bpm : "---"}`;
+    entry.appendChild(img);
+    entry.appendChild(meta);
+    gallery.appendChild(entry);
   });
 
   albumButton.addEventListener("click", () => {
