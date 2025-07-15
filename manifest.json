@@ -1,0 +1,22 @@
+{
+    "name": "ハートカメラ (Heart Camera)",
+    "short_name": "ハートカメラ",
+    "start_url": "./index.html",
+    "display": "standalone",
+    "background_color": "#ffffff",
+    "theme_color": "#ffc0cb",
+    "description": "ハートのフレームで写真が撮れるカメラアプリ",
+    "icons": [
+        {
+            "src": "./images/icon-192.png",
+            "sizes": "192x192",
+            "type": "image/png"
+        },
+        {
+            "src": "./images/icon-512.png",
+            "sizes": "512x512",
+            "type": "image/png"
+        }
+    ]
+}
+
