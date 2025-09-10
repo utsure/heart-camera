@@ -84,7 +84,6 @@
     display: flex;
     justify-content: center;
     align-items: center;
-    /* 【変更】文字サイズを大きくして見やすく */
     font-size: 48px;
     font-weight: bold;
     color: white;
@@ -143,9 +142,9 @@
 (async () => {
   const video = document.getElementById("video");
   const canvas = document.getElementById("canvas");
-  const ctx = canvas.getContext("2d", { willReadFrequently: true }); // パフォーマンスのため追記
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
   const bpmText = document.getElementById("bpm-value");
-  const apText = document.getElementById("ap-value"); // fTextからapTextに変更
+  const apText = document.getElementById("ap-value");
   const graph = document.getElementById("graph");
   const gctx = graph.getContext("2d");
   const gallery = document.getElementById("gallery");
@@ -154,8 +153,8 @@
   let measuring = false;
   let bpm = 0;
   let history = [];
-  let scale = 0.25; // 初期値を円の最小サイズに
-  let apertureValue = 22; // fValueからapertureValueに名称変更
+  let scale = 0.25;
+  let apertureValue = 22;
   let lastPinch = 0;
 
   try {
@@ -179,18 +178,15 @@
     centerCircle.style.height = radius + "px";
   }
 
-  // 【変更】絞り値(Aperture Value)に応じてCSSフィルターを計算
   function computeCssFilter(apValue) {
-    // Ap値が小さいほどボケが強くなる
     const blurPx = Math.max(0, (22 - apValue) / 20 * 10);
-    // Ap値が小さいほど明るくなる
     const brightness = 2.0 - (apValue / 22);
     return `blur(${blurPx.toFixed(1)}px) brightness(${brightness.toFixed(2)})`;
   }
 
   video.addEventListener("loadeddata", () => {
     resize();
-    updateApertureDisplay(); // 初期表示を更新
+    updateApertureDisplay();
     updateCircleSize();
     requestAnimationFrame(loop);
     loadFromLocalStorage();
@@ -243,16 +239,11 @@
   }
 
   function loop() {
-    // 動画にリアルタイムフィルターを反映
     video.style.filter = computeCssFilter(apertureValue);
-
-    // canvasは波形計測用にフィルターなし描画
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     if (measuring) {
-      // フィルターのかかっていない生の映像をcanvasに描画してBPMを測定
       ctx.filter = 'none';
       ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-
       const size = 100;
       const x = (canvas.width - size) / 2;
       const y = (canvas.height - size) / 2;
@@ -269,21 +260,27 @@
     requestAnimationFrame(loop);
   }
   
-  const sleep = ms => new Promise(res => setTimeout(res, ms));
-
-  // 【変更】BPMに応じたモーションブラー撮影
+  // 【変更】`sleep`の代わりに、より確実な`requestAnimationFrame`を使って次の描画タイミングを待つようにします
   async function captureWithMotionBlur(tc, video, bpm, width, height) {
     if (bpm < 60 || bpm > 100) {
         tc.drawImage(video, 0, 0, width, height);
         return;
     }
-    // 【修正】BPM 60でブレが最大(10フレーム)、BPM 100でブレが最小(1フレーム)
+    
+    // BPM 60でブレが最大(10フレーム)、BPM 100でブレが最小(1フレーム)
     const numFrames = Math.round(1 + (100 - bpm) / (100 - 60) * 9);
     
     tc.globalAlpha = 1.0 / numFrames;
+
     for (let i = 0; i < numFrames; i++) {
+        // 現在のビデオフレームを描画
         tc.drawImage(video, 0, 0, width, height);
-        await sleep(16);
+        
+        //最後のフレームを描画した後は待たない
+        if (i < numFrames - 1) {
+            // 次の描画フレームを待つことで、コマとコマの間の動きを捉える
+            await new Promise(resolve => requestAnimationFrame(resolve));
+        }
     }
     tc.globalAlpha = 1.0;
   }
@@ -306,18 +303,14 @@
     }, 8000);
   };
 
-  // 撮影時
   document.getElementById("shutter-button").onclick = async () => {
     const tmp = document.createElement("canvas");
-    // 撮影は高画質で行うため、videoのネイティブ解像度を使用
     tmp.width = video.videoWidth;
     tmp.height = video.videoHeight;
     const tc = tmp.getContext("2d");
 
-    // 撮影時のフィルターはプレビューと同じものを適用
     tc.filter = computeCssFilter(apertureValue);
     
-    // BPMに応じたモーションブラー撮影を実行
     await captureWithMotionBlur(tc, video, bpm, tmp.width, tmp.height);
 
     const url = tmp.toDataURL("image/jpeg", 0.9);
@@ -328,7 +321,6 @@
     const meta = document.createElement("div");
     meta.className = "meta";
     const metaBPM = (bpm >= 60 && bpm <= 100) ? `${bpm} BPM` : "--- BPM";
-    // 【変更】メタデータをAp値で保存
     meta.textContent = `Ap ${apertureValue}\n${metaBPM}\n${new Date().toLocaleString('ja-JP')}`;
     entry.appendChild(img);
     entry.appendChild(meta);
@@ -340,15 +332,12 @@
     gallery.style.display = gallery.style.display === "none" ? "flex" : "none";
   };
   
-  // 【新設】絞り値の表示を更新する関数
   function updateApertureDisplay() {
-      // scale (0.25-4) を apertureValue (22-2) にマッピング
       apertureValue = Math.round((scale - 0.25) / (4.0 - 0.25) * (2 - 22) + 22);
       centerCircle.textContent = apertureValue;
       apText.textContent = apertureValue;
   }
 
-  // 【変更】ピンチズームで絞り値を変更
   canvas.addEventListener("touchstart", (e) => {
     if(e.touches.length === 2){
       lastPinch = Math.hypot(
@@ -368,7 +357,7 @@
       lastPinch = d;
       scale = Math.min(Math.max(scale, 0.25), 4);
       
-      updateApertureDisplay(); // 絞り値の表示を更新
+      updateApertureDisplay();
       updateCircleSize();
     }
   });
