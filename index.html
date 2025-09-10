@@ -144,7 +144,7 @@
     await startCamera();
   };
 
-  // 【変更】撮影時の処理全体をエラーハンドリングで強化
+  // 【変更】撮影時の処理全体を修正
   document.getElementById("shutter-button").onclick = async () => {
     try {
         let position = null;
@@ -158,49 +158,56 @@
             console.warn("位置情報の取得に失敗:", error.message);
         }
 
-        const tmp = document.createElement("canvas");
-        tmp.width = video.videoWidth;
-        tmp.height = video.videoHeight;
-        const tc = tmp.getContext("2d");
-        tc.filter = computeCssFilter(fValue);
+        // Step 1: モーションブラーを適用した中間画像を作成 (まだ反転はしない)
+        const intermediateCanvas = document.createElement("canvas");
+        intermediateCanvas.width = video.videoWidth;
+        intermediateCanvas.height = video.videoHeight;
+        const intermediateCtx = intermediateCanvas.getContext("2d");
+        intermediateCtx.filter = computeCssFilter(fValue);
+        await captureWithMotionBlur(intermediateCtx, video, bpm, intermediateCanvas.width, intermediateCanvas.height);
+        
+        // Step 2: 最終的な画像を作成するCanvasを用意
+        const finalCanvas = document.createElement("canvas");
+        finalCanvas.width = video.videoWidth;
+        finalCanvas.height = video.videoHeight;
+        const finalCtx = finalCanvas.getContext("2d");
 
+        // Step 3: 内カメラの場合のみ、最終Canvasを反転させてから中間画像を書き込む
         if (currentFacingMode === 'user') {
-            tc.translate(tmp.width, 0);
-            tc.scale(-1, 1);
+            finalCtx.translate(finalCanvas.width, 0);
+            finalCtx.scale(-1, 1);
         }
+        finalCtx.drawImage(intermediateCanvas, 0, 0);
 
-        await captureWithMotionBlur(tc, video, bpm, tmp.width, tmp.height);
-        let imageUrl = tmp.toDataURL("image/jpeg", 0.9);
+        // Step 4: 最終Canvasから画像データを生成
+        let imageUrl = finalCanvas.toDataURL("image/jpeg", 0.9);
 
+        // Step 5: EXIFデータを書き込む
         if (position && window.piexif) {
             try {
-                const exifObj = {"GPS": {}};
+                const exifObj = {"0th": {}, "GPS": {}};
+                // 基本情報を追加して安定性を向上
+                exifObj["0th"][piexif.ImageIFD.Software] = "F-Shutter Heart Camera";
+                
                 exifObj.GPS[piexif.GPSIFD.GPSLatitudeRef] = position.coords.latitude < 0 ? 'S' : 'N';
                 exifObj.GPS[piexif.GPSIFD.GPSLatitude] = piexif.GPSHelper.degToDms(position.coords.latitude);
                 exifObj.GPS[piexif.GPSIFD.GPSLongitudeRef] = position.coords.longitude < 0 ? 'W' : 'E';
                 exifObj.GPS[piexif.GPSIFD.GPSLongitude] = piexif.GPSHelper.degToDms(position.coords.longitude);
+                
                 const exifBytes = piexif.dump(exifObj);
                 imageUrl = piexif.insert(exifBytes, imageUrl);
             } catch (exifError) {
                 console.error("EXIFデータの埋め込みに失敗:", exifError);
-                // EXIFの失敗は警告を出すだけで、保存処理は続行する
+                // ユーザーに通知するが、処理は続行
                 alert("位置情報の書き込みに失敗しましたが、写真は保存できます。");
             }
         }
 
+        // Step 6: ギャラリーへの追加と共有
         const metaBPM = (bpm >= 60 && bpm <= 100) ? `${bpm} BPM` : "--- BPM";
         const metaText = `F${fValue}\n${metaBPM}\n${locationString}\n${new Date().toLocaleString('ja-JP')}`;
 
-        const entry = document.createElement("div");
-        entry.className = "entry";
-        const img = document.createElement("img");
-        img.src = imageUrl;
-        const meta = document.createElement("div");
-        meta.className = "meta";
-        meta.textContent = metaText;
-        entry.appendChild(img);
-        entry.appendChild(meta);
-        gallery.prepend(entry);
+        const entry = document.createElement("div"); /* 省略 */ entry.className = "entry"; const img = document.createElement("img"); img.src = imageUrl; const meta = document.createElement("div"); meta.className = "meta"; meta.textContent = metaText; entry.appendChild(img); entry.appendChild(meta); gallery.prepend(entry);
         saveToLocalStorage();
 
         const blob = await (await fetch(imageUrl)).blob();
@@ -208,7 +215,7 @@
         const fileName = `F-Shutter_${timestamp}.jpg`;
         const file = new File([blob], fileName, { type: 'image/jpeg' });
         
-        if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        if (navigator.share && navigator.canShare({ files: [file] })) {
             await navigator.share({ files: [file], title: '撮影した写真', text: `F${fValue} ${metaBPM}`});
         } else {
             const a = document.createElement("a"); a.href = imageUrl; a.download = fileName; document.body.appendChild(a); a.click(); document.body.removeChild(a);
