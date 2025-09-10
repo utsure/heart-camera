@@ -62,59 +62,43 @@
   let currentFacingMode = 'environment';
   let mediaStream;
 
+  function resize() {
+    if (video.videoWidth > 0) {
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      graph.width = graph.clientWidth;
+      graph.height = graph.clientHeight;
+    }
+  }
+
   // 【変更】カメラ起動・切り替えの安定性を向上
-  async function startCamera() {
+  async function startCamera(facingMode) {
     if (mediaStream) {
       mediaStream.getTracks().forEach(track => track.stop());
     }
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ 
-        video: { facingMode: currentFacingMode } 
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: facingMode }
       });
       mediaStream = stream;
       video.srcObject = stream;
-      
-      // videoのメタデータが読み込まれるまで待つプロミス
-      await new Promise(resolve => {
-        video.onloadedmetadata = () => {
-          resolve();
-        };
-      });
-
-      // メタデータ読み込み後にリサイズと反転を設定
-      resize();
-      video.style.transform = (currentFacingMode === 'user') ? 'scaleX(-1)' : 'none';
-
-    } catch(e) {
-      alert("カメラの起動に失敗しました: " + e);
+      // video.play() を明示的に呼び出す
+      await video.play();
+    } catch (e) {
+      alert(`カメラの起動に失敗しました (${facingMode}): ${e}`);
     }
   }
-  
-  // 位置情報を取得する関数 (変更なし)
-  function getLocation() { return new Promise((resolve, reject) => { if (!navigator.geolocation) { reject(new Error("Geolocation is not supported by your browser.")); } else { navigator.geolocation.getCurrentPosition( (position) => resolve(position), (error) => reject(error) ); } }); }
 
-  // 最初にカメラを起動
-  await startCamera();
-
-  // 【新設】ページ読み込み時に位置情報の許可を求める
-  getLocation().catch(err => {
-      console.warn("起動時の位置情報取得リクエスト失敗（ユーザーが拒否した場合など）:", err.message);
+  // video要素が再生準備完了(playイベント)になったらリサイズを実行
+  video.addEventListener('play', () => {
+    resize();
+    video.style.transform = (currentFacingMode === 'user') ? 'scaleX(-1)' : 'none';
   });
 
-
-  function resize() { /* 省略(変更なし) */ canvas.width = video.videoWidth; canvas.height = video.videoHeight; graph.width = graph.clientWidth; graph.height = graph.clientHeight; }
   function updateCircleSize() { /* 省略(変更なし) */ const radius = 150 * scale; centerCircle.style.width = radius + "px"; centerCircle.style.height = radius + "px"; }
   function computeCssFilter(apValue) { /* 省略(変更なし) */ const blurPx = Math.max(0, (22 - apValue) / 20 * 10); const brightness = 2.0 - (apValue / 22); return `blur(${blurPx.toFixed(1)}px) brightness(${brightness.toFixed(2)})`; }
 
-  video.addEventListener("loadeddata", () => {
-    // このイベントは最初の読み込み時のみなので、主要な処理はstartCamera内に移動
-    updateFValueDisplay();
-    updateCircleSize();
-    requestAnimationFrame(loop);
-    loadFromLocalStorage();
-  });
-
-  window.addEventListener("resize", () => { resize(); updateCircleSize(); });
+  window.addEventListener("resize", resize);
   function drawGraph() { /* 省略(変更なし) */ if (history.length === 0) return; const arr = history.slice(-graph.width).map(o => o.v); const min = Math.min(...arr); const max = Math.max(...arr); gctx.clearRect(0, 0, graph.width, graph.height); gctx.beginPath(); arr.forEach((v, i) => { const x = (i / arr.length) * graph.width; const y = graph.height - ((v - min) / (max - min + 1e-6)) * graph.height; i === 0 ? gctx.moveTo(x, y) : gctx.lineTo(x, y); }); gctx.strokeStyle = "#0f8"; gctx.lineWidth = 1.5; gctx.stroke(); }
   function calcBPM() { /* 省略(変更なし) */ if (history.length < 30) return 0; const vals = history.map(o => o.v); const times = history.map(o => o.t); const mean = vals.reduce((a,b) => a + b) / vals.length; const cen = vals.map(v => v - mean); const n = cen.length; const re = new Array(n).fill(0), im = new Array(n).fill(0); for (let k=0; k<n; k++) { for (let t=0; t<n; t++) { const ang = (2 * Math.PI * t * k) / n; re[k] += cen[t] * Math.cos(ang); im[k] -= cen[t] * Math.sin(ang); } } const power = re.map((r,i) => Math.hypot(r, im[i])); const dur = (times[times.length-1] - times[0]) / 1000; if (dur < 5) return 0; const freqRes = 1 / dur; const peaks = power.map((p,i) => ({bpm: i * freqRes * 60, power: p})).filter(o => o.bpm >= 60 && o.bpm <= 100); if (!peaks.length) return 0; return Math.round(peaks.reduce((a,b) => a.power > b.power ? a : b).bpm); }
 
@@ -139,8 +123,9 @@
     drawGraph();
     requestAnimationFrame(loop);
   }
-  
+
   async function captureWithMotionBlur(tc, video, bpm, width, height) { /* 省略(変更なし) */ if (bpm < 60 || bpm > 100) { tc.drawImage(video, 0, 0, width, height); return; } const numFrames = Math.round(1 + (100 - bpm) / (100 - 60) * 24); tc.globalAlpha = 1.0 / numFrames; for (let i = 0; i < numFrames; i++) { tc.drawImage(video, 0, 0, width, height); if (i < numFrames - 1) { await new Promise(resolve => requestAnimationFrame(resolve)); } } tc.globalAlpha = 1.0; }
+  function getLocation() { return new Promise((resolve, reject) => { if (!navigator.geolocation) { return reject(new Error("Geolocation is not supported.")); } navigator.geolocation.getCurrentPosition(resolve, reject); }); }
   
   document.getElementById("start-bpm-button").onclick = () => {
     if(measuring) return;
@@ -150,28 +135,98 @@
     setTimeout(() => {
       measuring = false;
       const newBpm = calcBPM();
-      if(newBpm > 0){
-        bpm = newBpm;
-        bpmText.textContent = bpm;
-      } else {
-        bpm = 0;
-        bpmText.textContent = "---";
-      }
+      bpm = (newBpm > 0) ? newBpm : 0;
+      bpmText.textContent = (bpm > 0) ? bpm : "---";
     }, 8000);
   };
 
   document.getElementById('switch-camera-button').onclick = async () => {
     currentFacingMode = (currentFacingMode === 'environment') ? 'user' : 'environment';
-    await startCamera();
+    await startCamera(currentFacingMode);
   };
 
-  document.getElementById("shutter-button").onclick = async () => { /* 省略(変更なし) */ try { let position = null; let locationString = "位置情報なし"; try { position = await getLocation(); const lat = position.coords.latitude.toFixed(5); const lon = position.coords.longitude.toFixed(5); locationString = `Lat:${lat} Lon:${lon}`; } catch (error) { console.warn("位置情報の取得に失敗:", error.message); } const intermediateCanvas = document.createElement("canvas"); intermediateCanvas.width = video.videoWidth; intermediateCanvas.height = video.videoHeight; const intermediateCtx = intermediateCanvas.getContext("2d"); intermediateCtx.filter = computeCssFilter(fValue); await captureWithMotionBlur(intermediateCtx, video, bpm, intermediateCanvas.width, intermediateCanvas.height); const finalCanvas = document.createElement("canvas"); finalCanvas.width = video.videoWidth; finalCanvas.height = video.videoHeight; const finalCtx = finalCanvas.getContext("2d"); if (currentFacingMode === 'user') { finalCtx.translate(finalCanvas.width, 0); finalCtx.scale(-1, 1); } finalCtx.drawImage(intermediateCanvas, 0, 0); let imageUrl = finalCanvas.toDataURL("image/jpeg", 0.9); if (position && window.piexif) { try { const exifObj = {"0th": {}, "GPS": {}}; exifObj["0th"][piexif.ImageIFD.Software] = "F-Shutter Heart Camera"; exifObj.GPS[piexif.GPSIFD.GPSLatitudeRef] = position.coords.latitude < 0 ? 'S' : 'N'; exifObj.GPS[piexif.GPSIFD.GPSLatitude] = piexif.GPSHelper.degToDms(position.coords.latitude); exifObj.GPS[piexif.GPSIFD.GPSLongitudeRef] = position.coords.longitude < 0 ? 'W' : 'E'; exifObj.GPS[piexif.GPSIFD.GPSLongitude] = piexif.GPSHelper.degToDms(position.coords.longitude); const exifBytes = piexif.dump(exifObj); imageUrl = piexif.insert(exifBytes, imageUrl); } catch (exifError) { console.error("EXIFデータの埋め込みに失敗:", exifError); alert("位置情報の書き込みに失敗しましたが、写真は保存できます。"); } } const metaBPM = (bpm >= 60 && bpm <= 100) ? `${bpm} BPM` : "--- BPM"; const metaText = `F${fValue}\n${metaBPM}\n${locationString}\n${new Date().toLocaleString('ja-JP')}`; const entry = document.createElement("div"); entry.className = "entry"; const img = document.createElement("img"); img.src = imageUrl; const meta = document.createElement("div"); meta.className = "meta"; meta.textContent = metaText; entry.appendChild(img); entry.appendChild(meta); gallery.prepend(entry); saveToLocalStorage(); const blob = await (await fetch(imageUrl)).blob(); const timestamp = new Date().toISOString().replace(/[:.]/g, '-'); const fileName = `F-Shutter_${timestamp}.jpg`; const file = new File([blob], fileName, { type: 'image/jpeg' }); if (navigator.share && navigator.canShare({ files: [file] })) { await navigator.share({ files: [file], title: '撮影した写真', text: `F${fValue} ${metaBPM}`}); } else { const a = document.createElement("a"); a.href = imageUrl; a.download = fileName; document.body.appendChild(a); a.click(); document.body.removeChild(a); } } catch (error) { console.error("撮影または共有の処理全体でエラーが発生しました:", error); alert("写真の保存に失敗しました。もう一度お試しください。"); } };
+  document.getElementById("shutter-button").onclick = async () => {
+    try {
+        let position = null;
+        let locationString = "位置情報なし";
+        try {
+            position = await getLocation();
+            const lat = position.coords.latitude.toFixed(5);
+            const lon = position.coords.longitude.toFixed(5);
+            locationString = `Lat:${lat} Lon:${lon}`;
+        } catch (error) {
+            console.warn("位置情報取得に失敗:", error.message);
+            alert("位置情報の取得に失敗しました。ブラウザや端末の設定を確認してください。");
+        }
+
+        const intermediateCanvas = document.createElement("canvas");
+        intermediateCanvas.width = video.videoWidth;
+        intermediateCanvas.height = video.videoHeight;
+        const intermediateCtx = intermediateCanvas.getContext("2d");
+        intermediateCtx.filter = computeCssFilter(fValue);
+        await captureWithMotionBlur(intermediateCtx, video, bpm, intermediateCanvas.width, intermediateCanvas.height);
+        
+        const finalCanvas = document.createElement("canvas");
+        finalCanvas.width = video.videoWidth;
+        finalCanvas.height = video.videoHeight;
+        const finalCtx = finalCanvas.getContext("2d");
+
+        if (currentFacingMode === 'user') {
+            finalCtx.translate(finalCanvas.width, 0);
+            finalCtx.scale(-1, 1);
+        }
+        finalCtx.drawImage(intermediateCanvas, 0, 0);
+        let imageUrl = finalCanvas.toDataURL("image/jpeg", 0.9);
+
+        if (position && window.piexif) {
+            try {
+                const exifObj = {"0th": {}, "GPS": {}};
+                exifObj["0th"][piexif.ImageIFD.Software] = "F-Shutter Heart Camera";
+                exifObj.GPS[piexif.GPSIFD.GPSLatitudeRef] = position.coords.latitude < 0 ? 'S' : 'N';
+                exifObj.GPS[piexif.GPSIFD.GPSLatitude] = piexif.GPSHelper.degToDms(position.coords.latitude);
+                exifObj.GPS[piexif.GPSIFD.GPSLongitudeRef] = position.coords.longitude < 0 ? 'W' : 'E';
+                exifObj.GPS[piexif.GPSIFD.GPSLongitude] = piexif.GPSHelper.degToDms(position.coords.longitude);
+                const exifBytes = piexif.dump(exifObj);
+                imageUrl = piexif.insert(exifBytes, imageUrl);
+            } catch (exifError) {
+                console.error("EXIFデータの埋め込みに失敗:", exifError);
+            }
+        }
+
+        const metaBPM = (bpm >= 60 && bpm <= 100) ? `${bpm} BPM` : "--- BPM";
+        const metaText = `F${fValue}\n${metaBPM}\n${locationString}\n${new Date().toLocaleString('ja-JP')}`;
+        const entry = document.createElement("div"); entry.className = "entry"; const img = document.createElement("img"); img.src = imageUrl; const meta = document.createElement("div"); meta.className = "meta"; meta.textContent = metaText; entry.appendChild(img); entry.appendChild(meta); gallery.prepend(entry);
+        saveToLocalStorage();
+
+        const blob = await (await fetch(imageUrl)).blob();
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+        const fileName = `F-Shutter_${timestamp}.jpg`;
+        const file = new File([blob], fileName, { type: 'image/jpeg' });
+        
+        if (navigator.share && navigator.canShare({ files: [file] })) {
+            await navigator.share({ files: [file], title: '撮影した写真', text: `F${fValue} ${metaBPM}`});
+        } else {
+            const a = document.createElement("a"); a.href = imageUrl; a.download = fileName; document.body.appendChild(a); a.click(); document.body.removeChild(a);
+        }
+    } catch (error) {
+        console.error("撮影処理全体でエラー:", error);
+        alert("写真の撮影または保存に失敗しました。");
+    }
+  };
+
   document.getElementById("album-button").onclick = () => { /* 省略(変更なし) */ gallery.style.display = gallery.style.display === "none" ? "flex" : "none"; };
   function updateFValueDisplay() { /* 省略(変更なし) */ fValue = Math.round((scale - 0.25) / (4.0 - 0.25) * (2 - 22) + 22); centerCircle.textContent = fValue; fText.textContent = fValue; }
   canvas.addEventListener("touchstart", (e) => { /* 省略(変更なし) */ if(e.touches.length === 2){ lastPinch = Math.hypot( e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY ); } });
   canvas.addEventListener("touchmove", (e) => { /* 省略(変更なし) */ if(e.touches.length === 2){ const d = Math.hypot( e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY ); scale += (d - lastPinch) * 0.005; lastPinch = d; scale = Math.min(Math.max(scale, 0.25), 4); updateFValueDisplay(); updateCircleSize(); } });
   function saveToLocalStorage(){ /* 省略(変更なし) */ const entries = []; gallery.querySelectorAll(".entry").forEach(entry => { const img = entry.querySelector("img"); const meta = entry.querySelector(".meta"); entries.push({ src: img.src, meta: meta.textContent }); }); localStorage.setItem("fshutter_album", JSON.stringify(entries)); }
   function loadFromLocalStorage(){ /* 省略(変更なし) */ const saved = localStorage.getItem("fshutter_album"); if(saved){ const arr = JSON.parse(saved); arr.forEach(item => { const entry = document.createElement("div"); entry.className = "entry"; const img = document.createElement("img"); img.src = item.src; const meta = document.createElement("div"); meta.className = "meta"; meta.textContent = item.meta || "保存写真"; entry.appendChild(img); entry.appendChild(meta); gallery.appendChild(entry); }); } }
+
+  // 初期化処理
+  await startCamera(currentFacingMode);
+  updateFValueDisplay();
+  updateCircleSize();
+  loadFromLocalStorage();
+  requestAnimationFrame(loop);
 
 })();
 </script>
