@@ -14,11 +14,9 @@
     background: #000; color: #fff;
     font-family: sans-serif; touch-action: none;
   }
-  /* videoは裏で動かすだけなので非表示に */
   video {
     display: none;
   }
-  /* canvasをメインの表示領域にする */
   #canvas {
     position: absolute; top: 0; left: 0;
     width: 100%; height: 100%;
@@ -88,7 +86,7 @@
     display: flex;
     justify-content: center;
     align-items: center;
-    font-size: 48px; /* 数字が見やすいようにフォントサイズを調整 */
+    font-size: 48px;
     font-weight: bold;
     color: white;
     text-shadow: 0 0 5px black;
@@ -138,7 +136,8 @@
 <div id="info-box">Ap: <span id="ap-value">---</span><br>BPM: <span id="bpm-value">---</span></div>
 <div id="album-button">アルバム</div>
 <div id="gallery"></div>
-<div id="center-circle">22</div> <div id="graph-container"><canvas id="graph"></canvas></div>
+<div id="center-circle">22</div>
+<div id="graph-container"><canvas id="graph"></canvas></div>
 <div id="shutter-button" title="撮影"></div>
 <div id="start-bpm-button">BPM測定</div>
 
@@ -157,9 +156,13 @@
   let measuring = false;
   let bpm = 0;
   let history = [];
-  let scale = 0.25; // 初期スケールを最小に
-  let apertureValue = 22; // 新しい絞り値の変数
+  let scale = 0.25;
+  let apertureValue = 22;
   let lastPinch = 0;
+
+  // 【改善2】BPM測定を間引くための変数
+  let lastBpmCheck = 0;
+  const bpmCheckInterval = 100; // 100ミリ秒ごと = 1秒に10回
 
   // カメラ取得
   try {
@@ -170,46 +173,54 @@
     return;
   }
 
-  // リサイズ
+  // 【改善1】リサイズ処理の変更
   function resize() {
-    // videoのサイズに合わせてcanvasの内部解像度を設定
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
+    const videoWidth = video.videoWidth;
+    const videoHeight = video.videoHeight;
+    const aspectRatio = videoWidth / videoHeight;
+
+    // 処理の上限解像度を設定
+    const maxCanvasWidth = 854; // (FWVGA) これくらいの解像度なら軽快に動く
+    
+    // videoの解像度が上限を超えていたら、上限に合わせてcanvasサイズを調整
+    if (videoWidth > maxCanvasWidth) {
+      canvas.width = maxCanvasWidth;
+      canvas.height = maxCanvasWidth / aspectRatio;
+    } else {
+      canvas.width = videoWidth;
+      canvas.height = videoHeight;
+    }
+
     graph.width = graph.clientWidth;
     graph.height = graph.clientHeight;
   }
 
-  // 円のサイズを更新
   function updateCircleSize() {
     const radius = 150 * scale;
     centerCircle.style.width = radius + "px";
     centerCircle.style.height = radius + "px";
   }
 
-  // 絞り値に応じてCanvasフィルターを計算
   function computeCanvasFilter(apValue) {
-    // apValueが小さいほど背景がボケる (2で最大、22でボケなし)
     const blurPx = Math.max(0, (22 - apValue) / 20 * 10);
-    // apValueが小さいほど明るくなる
     const brightness = 2.0 - (apValue / 22);
     return `blur(${blurPx.toFixed(1)}px) brightness(${brightness.toFixed(2)})`;
   }
   
-  // 起動時の初期化処理
   video.addEventListener("loadeddata", () => {
     resize();
-    updateApertureDisplay(); // 初期表示を更新
+    updateApertureDisplay();
     updateCircleSize();
     requestAnimationFrame(loop);
     loadFromLocalStorage();
   });
 
   window.addEventListener("resize", () => {
-    resize();
-    updateCircleSize();
+    // 画面サイズが変わっても内部解像度は変えない
+    graph.width = graph.clientWidth;
+    graph.height = graph.clientHeight;
   });
 
-  // 波形描画 (変更なし)
   function drawGraph() {
     if (history.length === 0) return;
     const arr = history.slice(-graph.width).map(o => o.v);
@@ -227,7 +238,6 @@
     gctx.stroke();
   }
 
-  // BPM計算 (変更なし)
   function calcBPM() {
     if (history.length < 30) return 0;
     const vals = history.map(o => o.v);
@@ -251,33 +261,24 @@
     return Math.round(peaks.reduce((a,b) => a.power > b.power ? a : b).bpm);
   }
 
-  // 【修正】メインの描画ループ
-  function loop() {
-    // 1. BPMに応じてモーションブラーの強さ（残像の濃さ）を決定
-    let motionBlurAlpha = 0.8; // デフォルトは速いシャッター(残像ほぼなし)
+  // メインの描画ループ
+  function loop(currentTime) {
+    let motionBlurAlpha = 0.8;
     if (bpm >= 60 && bpm <= 100) {
-      // 【修正】
-      // BPM 60 -> alpha 0.1 (遅いシャッター = 残像強い)
-      // BPM 100 -> alpha 0.5 (速いシャッター = 残像弱い)
-      motionBlurAlpha = 0.1 + (bpm - 60) * (0.4 / 40); // 0.1から0.5の範囲で変動
+      motionBlurAlpha = 0.1 + (bpm - 60) * (0.4 / 40);
     }
 
-    // 2. モーションブラー（残像効果）を描画
     ctx.globalCompositeOperation = 'source-over';
     ctx.fillStyle = `rgba(0, 0, 0, ${motionBlurAlpha})`;
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-    // 3. 絞り値に応じたフィルター（ボケと明るさ）を設定
     ctx.filter = computeCanvasFilter(apertureValue);
-    
-    // 4. videoの現在のフレームをフィルターをかけて描画
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-    
-    // 5. BPM測定のためにフィルターを一旦解除
     ctx.filter = 'none';
 
-    // 6. BPM測定処理 (変更なし)
-    if (measuring) {
+    // 【改善2】BPM測定処理を間引く
+    if (measuring && currentTime - lastBpmCheck > bpmCheckInterval) {
+      lastBpmCheck = currentTime; // 最終チェック時刻を更新
       const size = 100;
       const x = (canvas.width - size) / 2;
       const y = (canvas.height - size) / 2;
@@ -290,6 +291,7 @@
       history.push({v: avg, t: Date.now()});
       if(history.length > 512) history.shift();
     }
+    
     drawGraph();
     requestAnimationFrame(loop);
   }
@@ -312,11 +314,8 @@
     }, 8000);
   };
 
-  // 撮影処理の簡略化 (変更なし)
   document.getElementById("shutter-button").onclick = () => {
-    // プレビューされているcanvasの内容をそのまま画像にする
     const url = canvas.toDataURL("image/jpeg", 0.9);
-
     const entry = document.createElement("div");
     entry.className = "entry";
     const img = document.createElement("img");
@@ -328,23 +327,19 @@
     entry.appendChild(img);
     entry.appendChild(meta);
     gallery.prepend(entry);
-
     saveToLocalStorage();
   };
 
-  // アルバム表示切替 (変更なし)
   document.getElementById("album-button").onclick = () => {
     gallery.style.display = gallery.style.display === "none" ? "flex" : "none";
   };
   
-  // 絞り値の表示を更新する関数 (変更なし)
   function updateApertureDisplay() {
     apertureValue = Math.round((scale - 0.25) * (2 - 22) / (4.0 - 0.25) + 22);
     centerCircle.textContent = apertureValue;
     apText.textContent = apertureValue;
   }
 
-  // ピンチズームで絞り値を変更 (変更なし)
   canvas.addEventListener("touchstart", (e) => {
     if(e.touches.length === 2){
       lastPinch = Math.hypot(
@@ -362,13 +357,11 @@
       scale += (d - lastPinch) * 0.005;
       lastPinch = d;
       scale = Math.min(Math.max(scale, 0.25), 4);
-      
-      updateApertureDisplay(); // 表示を更新
+      updateApertureDisplay();
       updateCircleSize();
     }
   });
 
-  // ローカルストレージ関連 (変更なし)
   function saveToLocalStorage(){
     const entries = [];
     gallery.querySelectorAll(".entry").forEach(entry => {
