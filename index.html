@@ -130,7 +130,7 @@
 <body>
 <video id="video" autoplay muted playsinline></video>
 <canvas id="canvas"></canvas>
-<div id="info-box">Ap: <span id="ap-value">---</span><br>BPM: <span id="bpm-value">---</span></div>
+<div id="info-box">F: <span id="f-value">---</span><br>BPM: <span id="bpm-value">---</span></div>
 <div id="album-button">アルバム</div>
 <div id="gallery"></div>
 <div id="center-circle">22</div>
@@ -144,7 +144,7 @@
   const canvas = document.getElementById("canvas");
   const ctx = canvas.getContext("2d", { willReadFrequently: true });
   const bpmText = document.getElementById("bpm-value");
-  const apText = document.getElementById("ap-value");
+  const fText = document.getElementById("f-value"); // 変数名をfTextに戻す
   const graph = document.getElementById("graph");
   const gctx = graph.getContext("2d");
   const gallery = document.getElementById("gallery");
@@ -154,7 +154,7 @@
   let bpm = 0;
   let history = [];
   let scale = 0.25;
-  let apertureValue = 22;
+  let fValue = 22; // 変数名をapertureValueからfValueに戻す
   let lastPinch = 0;
 
   try {
@@ -186,7 +186,7 @@
 
   video.addEventListener("loadeddata", () => {
     resize();
-    updateApertureDisplay();
+    updateFValueDisplay();
     updateCircleSize();
     requestAnimationFrame(loop);
     loadFromLocalStorage();
@@ -197,49 +197,11 @@
     updateCircleSize();
   });
 
-  function drawGraph() {
-    if (history.length === 0) return;
-    const arr = history.slice(-graph.width).map(o => o.v);
-    const min = Math.min(...arr);
-    const max = Math.max(...arr);
-    gctx.clearRect(0, 0, graph.width, graph.height);
-    gctx.beginPath();
-    arr.forEach((v, i) => {
-      const x = (i / arr.length) * graph.width;
-      const y = graph.height - ((v - min) / (max - min + 1e-6)) * graph.height;
-      i === 0 ? gctx.moveTo(x, y) : gctx.lineTo(x, y);
-    });
-    gctx.strokeStyle = "#0f8";
-    gctx.lineWidth = 1.5;
-    gctx.stroke();
-  }
-
-  function calcBPM() {
-    if (history.length < 30) return 0;
-    const vals = history.map(o => o.v);
-    const times = history.map(o => o.t);
-    const mean = vals.reduce((a,b) => a + b) / vals.length;
-    const cen = vals.map(v => v - mean);
-    const n = cen.length;
-    const re = new Array(n).fill(0), im = new Array(n).fill(0);
-    for (let k=0; k<n; k++) {
-      for (let t=0; t<n; t++) {
-        const ang = (2 * Math.PI * t * k) / n;
-        re[k] += cen[t] * Math.cos(ang);
-        im[k] -= cen[t] * Math.sin(ang);
-      }
-    }
-    const power = re.map((r,i) => Math.hypot(r, im[i]));
-    const dur = (times[times.length-1] - times[0]) / 1000;
-    if (dur < 5) return 0;
-    const freqRes = 1 / dur;
-    const peaks = power.map((p,i) => ({bpm: i * freqRes * 60, power: p})).filter(o => o.bpm >= 60 && o.bpm <= 100);
-    if (!peaks.length) return 0;
-    return Math.round(peaks.reduce((a,b) => a.power > b.power ? a : b).bpm);
-  }
+  function drawGraph() { /* 省略(変更なし) */ if (history.length === 0) return; const arr = history.slice(-graph.width).map(o => o.v); const min = Math.min(...arr); const max = Math.max(...arr); gctx.clearRect(0, 0, graph.width, graph.height); gctx.beginPath(); arr.forEach((v, i) => { const x = (i / arr.length) * graph.width; const y = graph.height - ((v - min) / (max - min + 1e-6)) * graph.height; i === 0 ? gctx.moveTo(x, y) : gctx.lineTo(x, y); }); gctx.strokeStyle = "#0f8"; gctx.lineWidth = 1.5; gctx.stroke(); }
+  function calcBPM() { /* 省略(変更なし) */ if (history.length < 30) return 0; const vals = history.map(o => o.v); const times = history.map(o => o.t); const mean = vals.reduce((a,b) => a + b) / vals.length; const cen = vals.map(v => v - mean); const n = cen.length; const re = new Array(n).fill(0), im = new Array(n).fill(0); for (let k=0; k<n; k++) { for (let t=0; t<n; t++) { const ang = (2 * Math.PI * t * k) / n; re[k] += cen[t] * Math.cos(ang); im[k] -= cen[t] * Math.sin(ang); } } const power = re.map((r,i) => Math.hypot(r, im[i])); const dur = (times[times.length-1] - times[0]) / 1000; if (dur < 5) return 0; const freqRes = 1 / dur; const peaks = power.map((p,i) => ({bpm: i * freqRes * 60, power: p})).filter(o => o.bpm >= 60 && o.bpm <= 100); if (!peaks.length) return 0; return Math.round(peaks.reduce((a,b) => a.power > b.power ? a : b).bpm); }
 
   function loop() {
-    video.style.filter = computeCssFilter(apertureValue);
+    video.style.filter = computeCssFilter(fValue);
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     if (measuring) {
       ctx.filter = 'none';
@@ -260,136 +222,110 @@
     requestAnimationFrame(loop);
   }
   
-  // 【変更】`sleep`の代わりに、より確実な`requestAnimationFrame`を使って次の描画タイミングを待つようにします
   async function captureWithMotionBlur(tc, video, bpm, width, height) {
     if (bpm < 60 || bpm > 100) {
         tc.drawImage(video, 0, 0, width, height);
         return;
     }
-    
-    // BPM 60でブレが最大(10フレーム)、BPM 100でブレが最小(1フレーム)
     const numFrames = Math.round(1 + (100 - bpm) / (100 - 60) * 9);
-    
     tc.globalAlpha = 1.0 / numFrames;
-
     for (let i = 0; i < numFrames; i++) {
-        // 現在のビデオフレームを描画
         tc.drawImage(video, 0, 0, width, height);
-        
-        //最後のフレームを描画した後は待たない
         if (i < numFrames - 1) {
-            // 次の描画フレームを待つことで、コマとコマの間の動きを捉える
             await new Promise(resolve => requestAnimationFrame(resolve));
         }
     }
     tc.globalAlpha = 1.0;
   }
 
-  document.getElementById("start-bpm-button").onclick = () => {
-    if(measuring) return;
-    measuring = true;
-    history = [];
-    bpmText.textContent = "測定中...";
-    setTimeout(() => {
-      measuring = false;
-      const newBpm = calcBPM();
-      if(newBpm >= 60 && newBpm <= 100){
-        bpm = newBpm;
-        bpmText.textContent = bpm;
-      } else {
-        bpm = 0;
-        bpmText.textContent = "---";
-      }
-    }, 8000);
-  };
+  // 【新設】位置情報を取得する関数
+  function getLocation() {
+    return new Promise((resolve, reject) => {
+        if (!navigator.geolocation) {
+            reject(new Error("Geolocation is not supported by your browser."));
+        } else {
+            navigator.geolocation.getCurrentPosition(
+                (position) => resolve(position),
+                (error) => reject(error)
+            );
+        }
+    });
+  }
 
+  document.getElementById("start-bpm-button").onclick = () => { /* 省略(変更なし) */ if(measuring) return; measuring = true; history = []; bpmText.textContent = "測定中..."; setTimeout(() => { measuring = false; const newBpm = calcBPM(); if(newBpm >= 60 && newBpm <= 100){ bpm = newBpm; bpmText.textContent = bpm; } else { bpm = 0; bpmText.textContent = "---"; } }, 8000); };
+
+  // 【変更】撮影時の処理
   document.getElementById("shutter-button").onclick = async () => {
+    // 1. 位置情報を取得 (初回は許可が必要)
+    let locationString = "位置情報なし";
+    try {
+        const position = await getLocation();
+        const lat = position.coords.latitude.toFixed(5);
+        const lon = position.coords.longitude.toFixed(5);
+        locationString = `Lat:${lat} Lon:${lon}`;
+    } catch (error) {
+        console.warn("位置情報の取得に失敗:", error.message);
+    }
+
+    // 2. 撮影処理
     const tmp = document.createElement("canvas");
     tmp.width = video.videoWidth;
     tmp.height = video.videoHeight;
     const tc = tmp.getContext("2d");
-
-    tc.filter = computeCssFilter(apertureValue);
-    
+    tc.filter = computeCssFilter(fValue);
     await captureWithMotionBlur(tc, video, bpm, tmp.width, tmp.height);
-
     const url = tmp.toDataURL("image/jpeg", 0.9);
+
+    // 3. メタデータ作成
+    const metaBPM = (bpm >= 60 && bpm <= 100) ? `${bpm} BPM` : "--- BPM";
+    const metaText = `F${fValue}\n${metaBPM}\n${locationString}\n${new Date().toLocaleString('ja-JP')}`;
+
+    // 4. アルバムに追加
     const entry = document.createElement("div");
     entry.className = "entry";
     const img = document.createElement("img");
     img.src = url;
     const meta = document.createElement("div");
     meta.className = "meta";
-    const metaBPM = (bpm >= 60 && bpm <= 100) ? `${bpm} BPM` : "--- BPM";
-    meta.textContent = `Ap ${apertureValue}\n${metaBPM}\n${new Date().toLocaleString('ja-JP')}`;
+    meta.textContent = metaText;
     entry.appendChild(img);
     entry.appendChild(meta);
     gallery.prepend(entry);
     saveToLocalStorage();
+
+    // 5. 【新設】デバイスに画像をダウンロード
+    const a = document.createElement("a");
+    a.href = url;
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    a.download = `F-Shutter_${timestamp}.jpg`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
   };
 
-  document.getElementById("album-button").onclick = () => {
-    gallery.style.display = gallery.style.display === "none" ? "flex" : "none";
-  };
+  document.getElementById("album-button").onclick = () => { gallery.style.display = gallery.style.display === "none" ? "flex" : "none"; };
   
-  function updateApertureDisplay() {
-      apertureValue = Math.round((scale - 0.25) / (4.0 - 0.25) * (2 - 22) + 22);
-      centerCircle.textContent = apertureValue;
-      apText.textContent = apertureValue;
+  // 【変更】F値の表示を更新する関数
+  function updateFValueDisplay() {
+      fValue = Math.round((scale - 0.25) / (4.0 - 0.25) * (2 - 22) + 22);
+      centerCircle.textContent = fValue;
+      fText.textContent = fValue;
   }
 
-  canvas.addEventListener("touchstart", (e) => {
-    if(e.touches.length === 2){
-      lastPinch = Math.hypot(
-        e.touches[0].clientX - e.touches[1].clientX,
-        e.touches[0].clientY - e.touches[1].clientY
-      );
-    }
-  });
-
+  canvas.addEventListener("touchstart", (e) => { /* 省略(変更なし) */ if(e.touches.length === 2){ lastPinch = Math.hypot( e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY ); } });
   canvas.addEventListener("touchmove", (e) => {
     if(e.touches.length === 2){
-      const d = Math.hypot(
-        e.touches[0].clientX - e.touches[1].clientX,
-        e.touches[0].clientY - e.touches[1].clientY
-      );
+      const d = Math.hypot( e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY );
       scale += (d - lastPinch) * 0.005;
       lastPinch = d;
       scale = Math.min(Math.max(scale, 0.25), 4);
-      
-      updateApertureDisplay();
+      updateFValueDisplay();
       updateCircleSize();
     }
   });
 
-  function saveToLocalStorage(){
-    const entries = [];
-    gallery.querySelectorAll(".entry").forEach(entry => {
-        const img = entry.querySelector("img");
-        const meta = entry.querySelector(".meta");
-        entries.push({ src: img.src, meta: meta.textContent });
-    });
-    localStorage.setItem("fshutter_album", JSON.stringify(entries));
-  }
-
-  function loadFromLocalStorage(){
-    const saved = localStorage.getItem("fshutter_album");
-    if(saved){
-      const arr = JSON.parse(saved);
-      arr.forEach(item => {
-        const entry = document.createElement("div");
-        entry.className = "entry";
-        const img = document.createElement("img");
-        img.src = item.src;
-        const meta = document.createElement("div");
-        meta.className = "meta";
-        meta.textContent = item.meta || "保存写真"; 
-        entry.appendChild(img);
-        entry.appendChild(meta);
-        gallery.appendChild(entry);
-      });
-    }
-  }
+  function saveToLocalStorage(){ /* 省略(変更なし) */ const entries = []; gallery.querySelectorAll(".entry").forEach(entry => { const img = entry.querySelector("img"); const meta = entry.querySelector(".meta"); entries.push({ src: img.src, meta: meta.textContent }); }); localStorage.setItem("fshutter_album", JSON.stringify(entries)); }
+  function loadFromLocalStorage(){ /* 省略(変更なし) */ const saved = localStorage.getItem("fshutter_album"); if(saved){ const arr = JSON.parse(saved); arr.forEach(item => { const entry = document.createElement("div"); entry.className = "entry"; const img = document.createElement("img"); img.src = item.src; const meta = document.createElement("div"); meta.className = "meta"; meta.textContent = item.meta || "保存写真"; entry.appendChild(img); entry.appendChild(meta); gallery.appendChild(entry); }); } }
 
 })();
 </script>
