@@ -4,127 +4,24 @@
 <meta charset="UTF-8" />
 <title>F-Shutter Heart Camera</title>
 <meta name="viewport" content="width=device-width,initial-scale=1.0,user-scalable=no" />
-
 <meta name="theme-color" content="#000000"/>
 <link rel="manifest" href="manifest.json">
+<script src="https://cdn.jsdelivr.net/npm/piexifjs/piexif.js"></script>
 
 <style>
-  body {
-    margin: 0; overflow: hidden;
-    background: #000; color: #fff;
-    font-family: sans-serif; touch-action: none;
-  }
-  video, #canvas {
-    position: absolute; top: 0; left: 0;
-    width: 100%; height: 100%;
-    object-fit: cover;
-    z-index: 1;
-    filter: none;
-  }
-  #info-box, #album-button, #center-circle, #graph-container, #shutter-button, #start-bpm-button {
-    position: absolute; z-index: 10; user-select: none;
-  }
-  #info-box {
-    top: 20px; left: 20px;
-    border: 2px solid white; background: rgba(0,0,0,0.3);
-    padding: 10px; border-radius: 5px; font-size: 16px; width: 90px;
-  }
-  #album-button {
-    bottom: 20px; left: 20px;
-    background: rgba(0,0,0,0.3);
-    border: 2px solid white;
-    padding: 10px;
-    border-radius: 5px;
-    font-size: 16px;
-    width: 90px;
-    text-align: center;
-    cursor: pointer;
-  }
-  #gallery {
-    display: none;
-    flex-wrap: wrap;
-    gap: 10px;
-    position: absolute;
-    bottom: 100px; left: 20px;
-    max-width: 80vw; max-height: 300px;
-    overflow-y: auto;
-    z-index: 10;
-    background: rgba(0,0,0,0.8);
-    padding: 10px;
-    border-radius: 8px;
-  }
-  .entry {
-    background: #222;
-    border: 1px solid #fff;
-    padding: 5px;
-    border-radius: 8px;
-    width: 80px;
-    color: #fff;
-    font-size: 12px;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    cursor: pointer;
-  }
-  .entry img {
-    width: 100%;
-    border-radius: 4px;
-    margin-bottom: 4px;
-  }
-  .entry .meta {
-    text-align: center;
-    line-height: 1.2;
-    white-space: pre-wrap;
-  }
-  #center-circle {
-    top: 50%; left: 50%;
-    transform: translate(-50%, -50%);
-    border: 3px solid white;
-    border-radius: 50%;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    font-size: 48px;
-    font-weight: bold;
-    color: white;
-    text-shadow: 0 0 5px black;
-    width: 150px; height: 150px;
-    transition: width 0.2s, height 0.2s;
-    pointer-events: none;
-  }
-  #graph-container {
-    top: 50%; right: 15px;
-    transform: translateY(-50%);
-    width: 120px; height: 250px;
-    background: rgba(0,0,0,0.4);
-    border-radius: 6px;
-    padding: 4px;
-    box-sizing: border-box;
-  }
-  #graph {
-    width: 100%; height: 100%;
-  }
-  #shutter-button {
-    bottom: 10px; left: 50%;
-    transform: translateX(-50%);
-    width: 60px; height: 60px;
-    background-color: red;
-    border-radius: 50%;
-    border: 4px solid white;
-    box-shadow: 0 0 10px rgba(0,0,0,0.5);
-    cursor: pointer;
-  }
-  #start-bpm-button {
-    top: 20px; right: 20px;
-    background: #0f8;
-    color: #000;
-    font-weight: bold;
-    padding: 10px;
-    border-radius: 6px;
-    cursor: pointer;
-    width: 90px;
-    text-align: center;
-  }
+  body { margin: 0; overflow: hidden; background: #000; color: #fff; font-family: sans-serif; touch-action: none; }
+  video, #canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; z-index: 1; filter: none; }
+  #info-box, #album-button, #center-circle, #graph-container, #shutter-button { position: absolute; z-index: 10; user-select: none; }
+  #info-box { top: 20px; left: 20px; border: 2px solid white; background: rgba(0,0,0,0.3); padding: 10px; border-radius: 5px; font-size: 16px; width: 90px; }
+  #album-button { bottom: 20px; left: 20px; background: rgba(0,0,0,0.3); border: 2px solid white; padding: 10px; border-radius: 5px; font-size: 16px; width: 90px; text-align: center; cursor: pointer; }
+  #gallery { display: none; flex-wrap: wrap; gap: 10px; position: absolute; bottom: 100px; left: 20px; max-width: 80vw; max-height: 300px; overflow-y: auto; z-index: 10; background: rgba(0,0,0,0.8); padding: 10px; border-radius: 8px; }
+  .entry { background: #222; border: 1px solid #fff; padding: 5px; border-radius: 8px; width: 80px; color: #fff; font-size: 12px; display: flex; flex-direction: column; align-items: center; cursor: pointer; }
+  .entry img { width: 100%; border-radius: 4px; margin-bottom: 4px; }
+  .entry .meta { text-align: center; line-height: 1.2; white-space: pre-wrap; }
+  #center-circle { top: 50%; left: 50%; transform: translate(-50%, -50%); border: 3px solid white; border-radius: 50%; display: flex; justify-content: center; align-items: center; font-size: 48px; font-weight: bold; color: white; text-shadow: 0 0 5px black; width: 150px; height: 150px; transition: width 0.2s, height 0.2s; pointer-events: none; }
+  #graph-container { top: 50%; right: 15px; transform: translateY(-50%); width: 120px; height: 250px; background: rgba(0,0,0,0.4); border-radius: 6px; padding: 4px; box-sizing: border-box; }
+  #graph { width: 100%; height: 100%; }
+  #shutter-button { bottom: 10px; left: 50%; transform: translateX(-50%); width: 60px; height: 60px; background-color: red; border-radius: 50%; border: 4px solid white; box-shadow: 0 0 10px rgba(0,0,0,0.5); cursor: pointer; }
 </style>
 </head>
 <body>
@@ -136,8 +33,6 @@
 <div id="center-circle">22</div>
 <div id="graph-container"><canvas id="graph"></canvas></div>
 <div id="shutter-button" title="撮影"></div>
-<div id="start-bpm-button">BPM測定</div>
-
 <script>
 (async () => {
   const video = document.getElementById("video");
@@ -150,12 +45,15 @@
   const gallery = document.getElementById("gallery");
   const centerCircle = document.getElementById("center-circle");
 
-  let measuring = false;
   let bpm = 0;
   let history = [];
   let scale = 0.25;
   let fValue = 22;
   let lastPinch = 0;
+  
+  // 【変更】BPMを常時測定するための設定
+  let lastBpmCalcTime = 0;
+  const bpmCalcInterval = 2000; // 2秒ごとにBPMを計算・更新
 
   try {
     const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
@@ -165,24 +63,9 @@
     return;
   }
 
-  function resize() {
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
-    graph.width = graph.clientWidth;
-    graph.height = graph.clientHeight;
-  }
-
-  function updateCircleSize() {
-    const radius = 150 * scale;
-    centerCircle.style.width = radius + "px";
-    centerCircle.style.height = radius + "px";
-  }
-
-  function computeCssFilter(apValue) {
-    const blurPx = Math.max(0, (22 - apValue) / 20 * 10);
-    const brightness = 2.0 - (apValue / 22);
-    return `blur(${blurPx.toFixed(1)}px) brightness(${brightness.toFixed(2)})`;
-  }
+  function resize() { /* 省略(変更なし) */ canvas.width = video.videoWidth; canvas.height = video.videoHeight; graph.width = graph.clientWidth; graph.height = graph.clientHeight; }
+  function updateCircleSize() { /* 省略(変更なし) */ const radius = 150 * scale; centerCircle.style.width = radius + "px"; centerCircle.style.height = radius + "px"; }
+  function computeCssFilter(apValue) { /* 省略(変更なし) */ const blurPx = Math.max(0, (22 - apValue) / 20 * 10); const brightness = 2.0 - (apValue / 22); return `blur(${blurPx.toFixed(1)}px) brightness(${brightness.toFixed(2)})`; }
 
   video.addEventListener("loadeddata", () => {
     resize();
@@ -192,63 +75,54 @@
     loadFromLocalStorage();
   });
 
-  window.addEventListener("resize", () => {
-    resize();
-    updateCircleSize();
-  });
-
+  window.addEventListener("resize", () => { /* 省略(変更なし) */ resize(); updateCircleSize(); });
   function drawGraph() { /* 省略(変更なし) */ if (history.length === 0) return; const arr = history.slice(-graph.width).map(o => o.v); const min = Math.min(...arr); const max = Math.max(...arr); gctx.clearRect(0, 0, graph.width, graph.height); gctx.beginPath(); arr.forEach((v, i) => { const x = (i / arr.length) * graph.width; const y = graph.height - ((v - min) / (max - min + 1e-6)) * graph.height; i === 0 ? gctx.moveTo(x, y) : gctx.lineTo(x, y); }); gctx.strokeStyle = "#0f8"; gctx.lineWidth = 1.5; gctx.stroke(); }
   function calcBPM() { /* 省略(変更なし) */ if (history.length < 30) return 0; const vals = history.map(o => o.v); const times = history.map(o => o.t); const mean = vals.reduce((a,b) => a + b) / vals.length; const cen = vals.map(v => v - mean); const n = cen.length; const re = new Array(n).fill(0), im = new Array(n).fill(0); for (let k=0; k<n; k++) { for (let t=0; t<n; t++) { const ang = (2 * Math.PI * t * k) / n; re[k] += cen[t] * Math.cos(ang); im[k] -= cen[t] * Math.sin(ang); } } const power = re.map((r,i) => Math.hypot(r, im[i])); const dur = (times[times.length-1] - times[0]) / 1000; if (dur < 5) return 0; const freqRes = 1 / dur; const peaks = power.map((p,i) => ({bpm: i * freqRes * 60, power: p})).filter(o => o.bpm >= 60 && o.bpm <= 100); if (!peaks.length) return 0; return Math.round(peaks.reduce((a,b) => a.power > b.power ? a : b).bpm); }
 
-  function loop() {
+  // 【変更】メインループ
+  function loop(currentTime) {
     video.style.filter = computeCssFilter(fValue);
+
+    // 1. 常に映像の明るさデータを収集
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    if (measuring) {
-      ctx.filter = 'none';
-      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-      const size = 100;
-      const x = (canvas.width - size) / 2;
-      const y = (canvas.height - size) / 2;
-      const imgData = ctx.getImageData(x, y, size, size);
-      let sum = 0;
-      for(let i=0; i<imgData.data.length; i+=4) {
+    ctx.filter = 'none';
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    const size = 100;
+    const x = (canvas.width - size) / 2;
+    const y = (canvas.height - size) / 2;
+    const imgData = ctx.getImageData(x, y, size, size);
+    let sum = 0;
+    for(let i=0; i<imgData.data.length; i+=4) {
         sum += (imgData.data[i] + imgData.data[i+1] + imgData.data[i+2]) / 3;
-      }
-      const avg = sum / (imgData.data.length/4);
-      history.push({v: avg, t: Date.now()});
-      if(history.length > 512) history.shift();
     }
+    const avg = sum / (imgData.data.length/4);
+    history.push({v: avg, t: Date.now()});
+    if(history.length > 512) history.shift();
     drawGraph();
+
+    // 2. 一定間隔でBPMを計算してUIを更新
+    if (currentTime - lastBpmCalcTime > bpmCalcInterval) {
+        lastBpmCalcTime = currentTime;
+        const newBpm = calcBPM();
+        if (newBpm > 0) {
+            bpm = newBpm;
+            bpmText.textContent = bpm;
+        } else {
+            bpmText.textContent = "---";
+        }
+    }
     requestAnimationFrame(loop);
   }
   
-  async function captureWithMotionBlur(tc, video, bpm, width, height) {
-    if (bpm < 60 || bpm > 100) {
-        tc.drawImage(video, 0, 0, width, height);
-        return;
-    }
-    
-    // 【変更】ブレの効果を強調。BPM60の時に重ねるフレーム数を最大25枚に増やします。
-    const numFrames = Math.round(1 + (100 - bpm) / (100 - 60) * 24);
-    
-    tc.globalAlpha = 1.0 / numFrames;
-    for (let i = 0; i < numFrames; i++) {
-        tc.drawImage(video, 0, 0, width, height);
-        if (i < numFrames - 1) {
-            await new Promise(resolve => requestAnimationFrame(resolve));
-        }
-    }
-    tc.globalAlpha = 1.0;
-  }
-
+  async function captureWithMotionBlur(tc, video, bpm, width, height) { /* 省略(変更なし) */ if (bpm < 60 || bpm > 100) { tc.drawImage(video, 0, 0, width, height); return; } const numFrames = Math.round(1 + (100 - bpm) / (100 - 60) * 24); tc.globalAlpha = 1.0 / numFrames; for (let i = 0; i < numFrames; i++) { tc.drawImage(video, 0, 0, width, height); if (i < numFrames - 1) { await new Promise(resolve => requestAnimationFrame(resolve)); } } tc.globalAlpha = 1.0; }
   function getLocation() { /* 省略(変更なし) */ return new Promise((resolve, reject) => { if (!navigator.geolocation) { reject(new Error("Geolocation is not supported by your browser.")); } else { navigator.geolocation.getCurrentPosition( (position) => resolve(position), (error) => reject(error) ); } }); }
-  document.getElementById("start-bpm-button").onclick = () => { /* 省略(変更なし) */ if(measuring) return; measuring = true; history = []; bpmText.textContent = "測定中..."; setTimeout(() => { measuring = false; const newBpm = calcBPM(); if(newBpm >= 60 && newBpm <= 100){ bpm = newBpm; bpmText.textContent = bpm; } else { bpm = 0; bpmText.textContent = "---"; } }, 8000); };
 
   // 【変更】撮影時の処理
   document.getElementById("shutter-button").onclick = async () => {
+    let position = null;
     let locationString = "位置情報なし";
     try {
-        const position = await getLocation();
+        position = await getLocation();
         const lat = position.coords.latitude.toFixed(5);
         const lon = position.coords.longitude.toFixed(5);
         locationString = `Lat:${lat} Lon:${lon}`;
@@ -262,7 +136,20 @@
     const tc = tmp.getContext("2d");
     tc.filter = computeCssFilter(fValue);
     await captureWithMotionBlur(tc, video, bpm, tmp.width, tmp.height);
-    const url = tmp.toDataURL("image/jpeg", 0.9);
+    
+    // EXIFデータなしの画像URLをまず作成
+    let imageUrl = tmp.toDataURL("image/jpeg", 0.9);
+
+    // 【新設】位置情報があればEXIFに書き込む
+    if (position && window.piexif) {
+        const exifObj = {"GPS": {}};
+        exifObj.GPS[piexif.GPSIFD.GPSLatitudeRef] = position.coords.latitude < 0 ? 'S' : 'N';
+        exifObj.GPS[piexif.GPSIFD.GPSLatitude] = piexif.GPSHelper.degToDms(position.coords.latitude);
+        exifObj.GPS[piexif.GPSIFD.GPSLongitudeRef] = position.coords.longitude < 0 ? 'W' : 'E';
+        exifObj.GPS[piexif.GPSIFD.GPSLongitude] = piexif.GPSHelper.degToDms(position.coords.longitude);
+        const exifBytes = piexif.dump(exifObj);
+        imageUrl = piexif.insert(exifBytes, imageUrl); // EXIFを埋め込んだ新しい画像URLを生成
+    }
 
     const metaBPM = (bpm >= 60 && bpm <= 100) ? `${bpm} BPM` : "--- BPM";
     const metaText = `F${fValue}\n${metaBPM}\n${locationString}\n${new Date().toLocaleString('ja-JP')}`;
@@ -270,7 +157,7 @@
     const entry = document.createElement("div");
     entry.className = "entry";
     const img = document.createElement("img");
-    img.src = url;
+    img.src = imageUrl; // EXIF付きのURLを使用
     const meta = document.createElement("div");
     meta.className = "meta";
     meta.textContent = metaText;
@@ -279,27 +166,15 @@
     gallery.prepend(entry);
     saveToLocalStorage();
 
-    // 【変更】自動ダウンロードの代わりに「共有」機能を呼び出す
     try {
-        const blob = await (await fetch(url)).blob();
+        const blob = await (await fetch(imageUrl)).blob();
         const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
         const fileName = `F-Shutter_${timestamp}.jpg`;
         const file = new File([blob], fileName, { type: 'image/jpeg' });
-
         if (navigator.canShare && navigator.canShare({ files: [file] })) {
-            await navigator.share({
-                files: [file],
-                title: '撮影した写真',
-                text: `F${fValue} ${metaBPM}`,
-            });
+            await navigator.share({ files: [file], title: '撮影した写真', text: `F${fValue} ${metaBPM}`});
         } else {
-            // 共有機能が使えないブラウザのための予備としてダウンロードリンクを残します
-            const a = document.createElement("a");
-            a.href = url;
-            a.download = fileName;
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
+            const a = document.createElement("a"); a.href = imageUrl; a.download = fileName; document.body.appendChild(a); a.click(); document.body.removeChild(a);
         }
     } catch (error) {
         console.error("共有または保存に失敗しました:", error);
@@ -308,13 +183,7 @@
   };
 
   document.getElementById("album-button").onclick = () => { gallery.style.display = gallery.style.display === "none" ? "flex" : "none"; };
-  
-  function updateFValueDisplay() {
-      fValue = Math.round((scale - 0.25) / (4.0 - 0.25) * (2 - 22) + 22);
-      centerCircle.textContent = fValue;
-      fText.textContent = fValue;
-  }
-
+  function updateFValueDisplay() { /* 省略(変更なし) */ fValue = Math.round((scale - 0.25) / (4.0 - 0.25) * (2 - 22) + 22); centerCircle.textContent = fValue; fText.textContent = fValue; }
   canvas.addEventListener("touchstart", (e) => { /* 省略(変更なし) */ if(e.touches.length === 2){ lastPinch = Math.hypot( e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY ); } });
   canvas.addEventListener("touchmove", (e) => { /* 省略(変更なし) */ if(e.touches.length === 2){ const d = Math.hypot( e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY ); scale += (d - lastPinch) * 0.005; lastPinch = d; scale = Math.min(Math.max(scale, 0.25), 4); updateFValueDisplay(); updateCircleSize(); } });
   function saveToLocalStorage(){ /* 省略(変更なし) */ const entries = []; gallery.querySelectorAll(".entry").forEach(entry => { const img = entry.querySelector("img"); const meta = entry.querySelector(".meta"); entries.push({ src: img.src, meta: meta.textContent }); }); localStorage.setItem("fshutter_album", JSON.stringify(entries)); }
@@ -324,13 +193,7 @@
 </script>
 
 <script>
-    if ('serviceWorker' in navigator) {
-        window.addEventListener('load', () => {
-            navigator.serviceWorker.register('./sw.js')
-                .then(reg => console.log('Service Worker 登録成功:', reg))
-                .catch(err => console.error('Service Worker 登録失敗:', err));
-        });
-    }
+    if ('serviceWorker' in navigator) { /* 省略(変更なし) */ window.addEventListener('load', () => { navigator.serviceWorker.register('./sw.js').then(reg => console.log('Service Worker 登録成功:', reg)).catch(err => console.error('Service Worker 登録失敗:', err)); }); }
 </script>
 
 </body>
