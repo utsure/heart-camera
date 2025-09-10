@@ -62,7 +62,7 @@
   let currentFacingMode = 'environment';
   let mediaStream;
 
-  // 【修正】意図しないズームを強力に防止
+  // 意図しないズームを防止
   document.addEventListener('gesturestart', (e) => e.preventDefault());
   document.addEventListener('dblclick', (e) => e.preventDefault());
   document.body.addEventListener('touchmove', (e) => {
@@ -134,7 +134,7 @@
   }
 
   async function captureWithMotionBlur(tc, video, bpm, width, height) { if (bpm < 60 || bpm > 100) { tc.drawImage(video, 0, 0, width, height); return; } const numFrames = Math.round(1 + (100 - bpm) / (100 - 60) * 24); tc.globalAlpha = 1.0 / numFrames; for (let i = 0; i < numFrames; i++) { tc.drawImage(video, 0, 0, width, height); if (i < numFrames - 1) { await new Promise(resolve => requestAnimationFrame(resolve)); } } tc.globalAlpha = 1.0; }
-  function getLocation() { return new Promise((resolve, reject) => { if (!navigator.geolocation) { return reject(new Error("Geolocation not supported.")); } navigator.geolocation.getCurrentPosition(resolve, reject, {timeout: 8000}); }); }
+  function getLocation() { return new Promise((resolve, reject) => { if (!navigator.geolocation) { return reject(new Error("Geolocation not supported.")); } navigator.geolocation.getCurrentPosition(resolve, reject, {timeout: 8000, enableHighAccuracy: true}); }); }
   
   document.getElementById("start-bpm-button").onclick = () => {
     if(measuring) return;
@@ -189,72 +189,18 @@
         if (position && window.piexif) {
             try {
                 const now = new Date();
-                const exifObj = {"0th": {}, "Exif": {}, "GPS": {}};
-                
-                exifObj["0th"][piexif.ImageIFD.Software] = "F-Shutter Heart Camera";
-                exifObj["Exif"][piexif.ExifIFD.DateTimeOriginal] = now.toISOString().slice(0, 19).replace("T", " ");
+                const zeroth = {};
+                const exif = {};
+                const gps = {};
 
-                // 【修正】GPSタイムスタンプを追加
+                // 【修正】iOSが認識するために必要な日付・時刻情報を複数追加
+                const dateStr = `${now.getFullYear()}:${(now.getMonth()+1).toString().padStart(2,'0')}:${now.getDate().toString().padStart(2,'0')} ${now.getHours().toString().padStart(2,'0')}:${now.getMinutes().toString().padStart(2,'0')}:${now.getSeconds().toString().padStart(2,'0')}`;
+                zeroth[piexif.ImageIFD.Software] = "F-Shutter Heart Camera";
+                zeroth[piexif.ImageIFD.DateTime] = dateStr;
+                exif[piexif.ExifIFD.DateTimeOriginal] = dateStr;
+                exif[piexif.ExifIFD.DateTimeDigitized] = dateStr;
+
+                // GPS関連情報
                 const gpsDate = new Date(position.timestamp);
-                exifObj.GPS[piexif.GPSIFD.GPSDateStamp] = `${gpsDate.getUTCFullYear()}:${gpsDate.getUTCMonth()+1}:${gpsDate.getUTCDate()}`;
-                exifObj.GPS[piexif.GPSIFD.GPSTimeStamp] = [gpsDate.getUTCHours(), gpsDate.getUTCMinutes(), gpsDate.getUTCSeconds()];
-                
-                exifObj.GPS[piexif.GPSIFD.GPSLatitudeRef] = position.coords.latitude < 0 ? 'S' : 'N';
-                exifObj.GPS[piexif.GPSIFD.GPSLatitude] = piexif.GPSHelper.degToDms(position.coords.latitude);
-                exifObj.GPS[piexif.GPSIFD.GPSLongitudeRef] = position.coords.longitude < 0 ? 'W' : 'E';
-                exifObj.GPS[piexif.GPSIFD.GPSLongitude] = piexif.GPSHelper.degToDms(position.coords.longitude);
-                
-                const exifBytes = piexif.dump(exifObj);
-                imageUrl = piexif.insert(exifBytes, imageUrl);
-            } catch (exifError) {
-                console.error("EXIF埋め込み失敗:", exifError);
-            }
-        }
-
-        const metaBPM = (bpm >= 60 && bpm <= 100) ? `${bpm} BPM` : "--- BPM";
-        const metaText = `F${fValue}\n${metaBPM}\n${locationString}\n${new Date().toLocaleString('ja-JP')}`;
-        
-        const entry = document.createElement("div"); entry.className = "entry"; const img = document.createElement("img"); img.src = imageUrl; const meta = document.createElement("div"); meta.className = "meta"; meta.textContent = metaText; entry.appendChild(img); entry.appendChild(meta); gallery.prepend(entry);
-        saveToLocalStorage();
-
-        const blob = await fetch(imageUrl).then(res => res.blob());
-        const fileName = `F-Shutter_${new Date().getTime()}.jpg`;
-        const file = new File([blob], fileName, { type: 'image/jpeg' });
-        
-        if (navigator.share && navigator.canShare({ files: [file] })) {
-            await navigator.share({ files: [file], title: '撮影した写真', text: `F${fValue} ${metaBPM}`});
-        } else {
-            const a = document.createElement("a"); a.href = imageUrl; a.download = fileName; a.click();
-        }
-    } catch (error) {
-        console.error("撮影処理エラー:", error);
-        alert("写真の撮影または保存に失敗しました。");
-    } finally {
-        shutterButton.classList.remove('disabled');
-    }
-  };
-
-  document.getElementById("album-button").onclick = () => { gallery.style.display = gallery.style.display === "none" ? "flex" : "none"; };
-  function updateFValueDisplay() { fValue = Math.round((scale - 0.25) / (4.0 - 0.25) * (2 - 22) + 22); centerCircle.textContent = fValue; fText.textContent = fValue; }
-  
-  const eventStopper = (e) => e.preventDefault();
-  canvas.addEventListener("touchstart", (e) => { eventStopper(e); if(e.touches.length === 2){ lastPinch = Math.hypot( e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY ); } }, { passive: false });
-  canvas.addEventListener("touchmove", (e) => { eventStopper(e); if(e.touches.length === 2){ const d = Math.hypot( e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY ); scale += (d - lastPinch) * 0.005; lastPinch = d; scale = Math.min(Math.max(scale, 0.25), 4); updateFValueDisplay(); updateCircleSize(); } }, { passive: false });
-
-  function saveToLocalStorage(){ const entries = []; gallery.querySelectorAll(".entry").forEach(entry => { const img = entry.querySelector("img"); const meta = entry.querySelector(".meta"); entries.push({ src: img.src, meta: meta.textContent }); }); localStorage.setItem("fshutter_album", JSON.stringify(entries)); }
-  function loadFromLocalStorage(){ const saved = localStorage.getItem("fshutter_album"); if(saved){ const arr = JSON.parse(saved); arr.forEach(item => { const entry = document.createElement("div"); entry.className = "entry"; const img = document.createElement("img"); img.src = item.src; const meta = document.createElement("div"); meta.className = "meta"; meta.textContent = item.meta || "保存写真"; entry.appendChild(img); entry.appendChild(meta); gallery.appendChild(entry); }); } }
-
-  await startCamera(currentFacingMode);
-  updateFValueDisplay();
-  updateCircleSize();
-  loadFromLocalStorage();
-  requestAnimationFrame(loop);
-
-})();
-</script>
-<script>
-    if ('serviceWorker' in navigator) { window.addEventListener('load', () => { navigator.serviceWorker.register('./sw.js').then(reg => console.log('Service Worker 登録成功:', reg)).catch(err => console.error('Service Worker 登録失敗:', err)); }); }
-</script>
-
-</body>
-</html>
+                gps[piexif.GPSIFD.GPSDateStamp] = `${gpsDate.getUTCFullYear()}:${gpsDate.getUTCMonth()+1}:${gpsDate.getUTCDate()}`;
+                gps[piexif.GPSIFD.GPSTimeStamp] = [gpsDate.getUTCHours(), gpsDate.getUTCMinutes(), gpsDate.getUTCSeconds
