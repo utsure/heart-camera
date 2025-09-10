@@ -6,8 +6,10 @@
 <meta name="viewport" content="width=device-width,initial-scale=1.0,user-scalable=no" />
 <meta name="theme-color" content="#000000"/>
 <link rel="manifest" href="manifest.json">
+<script src="https://cdn.jsdelivr.net/npm/piexifjs@1.0.6/piexif.js"></script>
+
 <style>
-  body { margin: 0; overflow: hidden; background: #000; color: #fff; font-family: sans-serif; touch-action: none; }
+  body { margin: 0; overflow: hidden; background: #000; color: #fff; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; touch-action: none; }
   video { transition: transform 0.3s; }
   video, #canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; z-index: 1; filter: none; }
   #info-box, #album-button, #center-circle, #graph-container, #shutter-button, #start-bpm-button, #switch-camera-button { position: absolute; z-index: 10; user-select: none; }
@@ -21,7 +23,7 @@
   #graph-container { top: 50%; right: 15px; transform: translateY(-50%); width: 120px; height: 250px; background: rgba(0,0,0,0.4); border-radius: 6px; padding: 4px; box-sizing: border-box; }
   #graph { width: 100%; height: 100%; }
   #shutter-button { bottom: 10px; left: 50%; transform: translateX(-50%); width: 60px; height: 60px; background-color: red; border-radius: 50%; border: 4px solid white; box-shadow: 0 0 10px rgba(0,0,0,0.5); cursor: pointer; transition: background-color 0.3s; }
-  #shutter-button.disabled { background-color: gray; cursor: not-allowed; }
+  #shutter-button.disabled { background-color: gray; cursor: not-allowed; pointer-events: none; }
   #start-bpm-button { top: 20px; right: 20px; background: #0f8; color: #000; font-weight: bold; padding: 10px; border-radius: 6px; cursor: pointer; width: 90px; text-align: center; }
   #switch-camera-button { bottom: 20px; right: 20px; background: rgba(0,0,0,0.3); border: 2px solid white; color: white; padding: 10px; border-radius: 5px; font-size: 16px; width: 90px; text-align: center; cursor: pointer; }
 </style>
@@ -50,8 +52,6 @@
   const gallery = document.getElementById("gallery");
   const centerCircle = document.getElementById("center-circle");
   const shutterButton = document.getElementById("shutter-button");
-
-  const exifWorker = new Worker('exif-worker.js');
 
   let measuring = false;
   let bpm = 0;
@@ -83,7 +83,7 @@
       video.srcObject = stream;
       await video.play();
     } catch (e) {
-      alert(`カメラの起動に失敗しました (${facingMode}): ${e.name} - ${e.message}`);
+      alert(`カメラの起動に失敗しました: ${e.name}`);
     }
   }
 
@@ -96,11 +96,11 @@
   function computeCssFilter(apValue) { const blurPx = Math.max(0, (22 - apValue) / 20 * 10); const brightness = 2.0 - (apValue / 22); return `blur(${blurPx.toFixed(1)}px) brightness(${brightness.toFixed(2)})`; }
 
   window.addEventListener("resize", resize);
-  function drawGraph() { /* 省略(変更なし) */ if (history.length === 0) return; const arr = history.slice(-graph.width).map(o => o.v); const min = Math.min(...arr); const max = Math.max(...arr); gctx.clearRect(0, 0, graph.width, graph.height); gctx.beginPath(); arr.forEach((v, i) => { const x = (i / arr.length) * graph.width; const y = graph.height - ((v - min) / (max - min + 1e-6)) * graph.height; i === 0 ? gctx.moveTo(x, y) : gctx.lineTo(x, y); }); gctx.strokeStyle = "#0f8"; gctx.lineWidth = 1.5; gctx.stroke(); }
-  function calcBPM() { /* 省略(変更なし) */ if (history.length < 30) return 0; const vals = history.map(o => o.v); const times = history.map(o => o.t); const mean = vals.reduce((a,b) => a + b) / vals.length; const cen = vals.map(v => v - mean); const n = cen.length; const re = new Array(n).fill(0), im = new Array(n).fill(0); for (let k=0; k<n; k++) { for (let t=0; t<n; t++) { const ang = (2 * Math.PI * t * k) / n; re[k] += cen[t] * Math.cos(ang); im[k] -= cen[t] * Math.sin(ang); } } const power = re.map((r,i) => Math.hypot(r, im[i])); const dur = (times[times.length-1] - times[0]) / 1000; if (dur < 5) return 0; const freqRes = 1 / dur; const peaks = power.map((p,i) => ({bpm: i * freqRes * 60, power: p})).filter(o => o.bpm >= 60 && o.bpm <= 100); if (!peaks.length) return 0; return Math.round(peaks.reduce((a,b) => a.power > b.power ? a : b).bpm); }
+  function drawGraph() { if (history.length === 0) return; const arr = history.slice(-graph.width).map(o => o.v); const min = Math.min(...arr); const max = Math.max(...arr); gctx.clearRect(0, 0, graph.width, graph.height); gctx.beginPath(); arr.forEach((v, i) => { const x = (i / arr.length) * graph.width; const y = graph.height - ((v - min) / (max - min + 1e-6)) * graph.height; i === 0 ? gctx.moveTo(x, y) : gctx.lineTo(x, y); }); gctx.strokeStyle = "#0f8"; gctx.lineWidth = 1.5; gctx.stroke(); }
+  function calcBPM() { if (history.length < 30) return 0; const vals = history.map(o => o.v); const times = history.map(o => o.t); const mean = vals.reduce((a,b) => a + b) / vals.length; const cen = vals.map(v => v - mean); const n = cen.length; const re = new Array(n).fill(0), im = new Array(n).fill(0); for (let k=0; k<n; k++) { for (let t=0; t<n; t++) { const ang = (2 * Math.PI * t * k) / n; re[k] += cen[t] * Math.cos(ang); im[k] -= cen[t] * Math.sin(ang); } } const power = re.map((r,i) => Math.hypot(r, im[i])); const dur = (times[times.length-1] - times[0]) / 1000; if (dur < 5) return 0; const freqRes = 1 / dur; const peaks = power.map((p,i) => ({bpm: i * freqRes * 60, power: p})).filter(o => o.bpm >= 60 && o.bpm <= 100); if (!peaks.length) return 0; return Math.round(peaks.reduce((a,b) => a.power > b.power ? a : b).bpm); }
 
   function loop() {
-    if (!video.paused && !video.ended) {
+    if (video.readyState >= 2) { // Ensure video is ready to be processed
         video.style.filter = computeCssFilter(fValue);
         ctx.clearRect(0, 0, canvas.width, canvas.height);
         if (measuring) {
@@ -123,27 +123,9 @@
     requestAnimationFrame(loop);
   }
 
-  async function captureWithMotionBlur(tc, video, bpm, width, height) { /* 省略(変更なし) */ if (bpm < 60 || bpm > 100) { tc.drawImage(video, 0, 0, width, height); return; } const numFrames = Math.round(1 + (100 - bpm) / (100 - 60) * 24); tc.globalAlpha = 1.0 / numFrames; for (let i = 0; i < numFrames; i++) { tc.drawImage(video, 0, 0, width, height); if (i < numFrames - 1) { await new Promise(resolve => requestAnimationFrame(resolve)); } } tc.globalAlpha = 1.0; }
+  async function captureWithMotionBlur(tc, video, bpm, width, height) { if (bpm < 60 || bpm > 100) { tc.drawImage(video, 0, 0, width, height); return; } const numFrames = Math.round(1 + (100 - bpm) / (100 - 60) * 24); tc.globalAlpha = 1.0 / numFrames; for (let i = 0; i < numFrames; i++) { tc.drawImage(video, 0, 0, width, height); if (i < numFrames - 1) { await new Promise(resolve => requestAnimationFrame(resolve)); } } tc.globalAlpha = 1.0; }
+  function getLocation() { return new Promise((resolve, reject) => { if (!navigator.geolocation) { return reject(new Error("Geolocation not supported.")); } navigator.geolocation.getCurrentPosition(resolve, reject, {timeout: 8000}); }); }
   
-  // 【変更】位置情報取得をtry-catchで囲み、失敗しても続行
-  async function getLocationSafe() {
-    try {
-      return await new Promise((resolve, reject) => {
-        if (!navigator.geolocation) {
-          return reject(new Error("Geolocation is not supported."));
-        }
-        navigator.geolocation.getCurrentPosition(resolve, reject, {
-            enableHighAccuracy: true,
-            timeout: 5000,
-            maximumAge: 0
-        });
-      });
-    } catch (error) {
-      console.warn("位置情報取得エラー:", error.message);
-      return null; // エラーが発生してもnullを返し、処理は続行
-    }
-  }
-
   document.getElementById("start-bpm-button").onclick = () => {
     if(measuring) return;
     measuring = true;
@@ -164,99 +146,88 @@
 
   shutterButton.onclick = async () => {
     if (shutterButton.classList.contains('disabled')) return;
-    shutterButton.classList.add('disabled'); // ボタンを無効化
+    shutterButton.classList.add('disabled');
+    
     try {
-        const position = await getLocationSafe(); // 安全に位置情報を取得
-        const locationString = position ? `Lat:${position.coords.latitude.toFixed(5)} Lon:${position.coords.longitude.toFixed(5)}` : "位置情報なし";
-
-        const intermediateCanvas = document.createElement("canvas");
-        intermediateCanvas.width = video.videoWidth;
-        intermediateCanvas.height = video.videoHeight;
-        const iCtx = intermediateCanvas.getContext("2d");
-        iCtx.filter = computeCssFilter(fValue);
-        await captureWithMotionBlur(iCtx, video, bpm, intermediateCanvas.width, intermediateCanvas.height);
+        let position = null;
+        let locationString = "位置情報なし";
+        try {
+            position = await getLocation();
+            locationString = `Lat:${position.coords.latitude.toFixed(5)} Lon:${position.coords.longitude.toFixed(5)}`;
+        } catch (error) {
+            console.warn("位置情報取得エラー:", error.message);
+            // ユーザーに許可を求めるために何もしないか、あるいは通知する
+             if(error.code === 1) { // PERMISSION_DENIED
+                alert("位置情報の許可がありません。ブラウザの設定を確認してください。");
+             } else {
+                alert("位置情報の取得にタイムアウトまたは失敗しました。");
+             }
+        }
         
-        const finalCanvas = document.createElement("canvas");
-        finalCanvas.width = video.videoWidth;
-        finalCanvas.height = video.videoHeight;
-        const fCtx = finalCanvas.getContext("2d");
+        const captureCanvas = document.createElement("canvas");
+        captureCanvas.width = video.videoWidth;
+        captureCanvas.height = video.videoHeight;
+        const capCtx = captureCanvas.getContext("2d");
 
         if (currentFacingMode === 'user') {
-            fCtx.translate(finalCanvas.width, 0);
-            fCtx.scale(-1, 1);
+            capCtx.translate(captureCanvas.width, 0);
+            capCtx.scale(-1, 1);
         }
-        fCtx.drawImage(intermediateCanvas, 0, 0);
-        const imageUrl = finalCanvas.toDataURL("image/jpeg", 0.9);
+        
+        capCtx.filter = computeCssFilter(fValue);
+        await captureWithMotionBlur(capCtx, video, bpm, captureCanvas.width, captureCanvas.height);
+        
+        let imageUrl = captureCanvas.toDataURL("image/jpeg", 0.9);
 
-        // Workerに重いEXIF処理を依頼
-        exifWorker.postMessage({ imageUrl, position });
-
-        // Workerからの応答を待つ
-        exifWorker.onmessage = async (event) => {
-            const finalImageUrl = event.data; // EXIF情報が埋め込まれた画像URL、または元の画像URL
-            
-            const metaBPM = (bpm >= 60 && bpm <= 100) ? `${bpm} BPM` : "--- BPM";
-            const metaText = `F${fValue}\n${metaBPM}\n${locationString}\n${new Date().toLocaleString('ja-JP')}`;
-            
-            const entry = document.createElement("div"); entry.className = "entry"; const img = document.createElement("img"); img.src = finalImageUrl; const meta = document.createElement("div"); meta.className = "meta"; meta.textContent = metaText; entry.appendChild(img); entry.appendChild(meta); gallery.prepend(entry);
-            saveToLocalStorage();
-
-            // Blobの生成とファイル名設定
-            const blob = await (await fetch(finalImageUrl)).blob();
-            const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-            const fileName = `F-Shutter_${timestamp}.jpg`;
-            const file = new File([blob], fileName, { type: 'image/jpeg' });
-            
-            // 共有APIまたはダウンロードリンクの提供
+        if (position && window.piexif) {
             try {
-                if (navigator.share && navigator.canShare({ files: [file] })) {
-                    await navigator.share({ files: [file], title: '撮影した写真', text: `F${fValue} ${metaBPM}`});
-                } else {
-                    // share APIが使えない場合の代替ダウンロード
-                    const a = document.createElement("a");
-                    a.href = finalImageUrl; // または URL.createObjectURL(blob);
-                    a.download = fileName;
-                    document.body.appendChild(a);
-                    a.click();
-                    document.body.removeChild(a);
-                    // URL.revokeObjectURL(blob); // オブジェクトURLを使用した場合
-                }
-            } catch (shareError) {
-                console.error("共有またはダウンロード中にエラー:", shareError);
-                alert("写真の保存に失敗しました。ファイルを手動でダウンロードします。");
-                // 最終手段としてダウンロードリンク
-                const a = document.createElement("a");
-                a.href = finalImageUrl;
-                a.download = fileName;
-                document.body.appendChild(a);
-                a.click();
-                document.body.removeChild(a);
+                const exifObj = {"0th": {}, "GPS": {}};
+                exifObj["0th"][piexif.ImageIFD.Software] = "F-Shutter Heart Camera";
+                exifObj.GPS[piexif.GPSIFD.GPSLatitudeRef] = position.coords.latitude < 0 ? 'S' : 'N';
+                exifObj.GPS[piexif.GPSIFD.GPSLatitude] = piexif.GPSHelper.degToDms(position.coords.latitude);
+                exifObj.GPS[piexif.GPSIFD.GPSLongitudeRef] = position.coords.longitude < 0 ? 'W' : 'E';
+                exifObj.GPS[piexif.GPSIFD.GPSLongitude] = piexif.GPSHelper.degToDms(position.coords.longitude);
+                const exifBytes = piexif.dump(exifObj);
+                imageUrl = piexif.insert(exifBytes, imageUrl);
+            } catch (exifError) {
+                console.error("EXIF埋め込み失敗:", exifError);
             }
-            shutterButton.classList.remove('disabled'); // ボタンを有効化
-        };
-
-        exifWorker.onerror = (err) => {
-             console.error("Workerでエラーが発生:", err);
-             alert("写真の処理中にエラーが発生しました。");
-             shutterButton.classList.remove('disabled');
         }
 
+        const metaBPM = (bpm >= 60 && bpm <= 100) ? `${bpm} BPM` : "--- BPM";
+        const metaText = `F${fValue}\n${metaBPM}\n${locationString}\n${new Date().toLocaleString('ja-JP')}`;
+        
+        const entry = document.createElement("div"); entry.className = "entry"; const img = document.createElement("img"); img.src = imageUrl; const meta = document.createElement("div"); meta.className = "meta"; meta.textContent = metaText; entry.appendChild(img); entry.appendChild(meta); gallery.prepend(entry);
+        saveToLocalStorage();
+
+        const blob = await (await fetch(imageUrl)).blob();
+        const fileName = `F-Shutter_${new Date().getTime()}.jpg`;
+        const file = new File([blob], fileName, { type: 'image/jpeg' });
+        
+        if (navigator.share) {
+            await navigator.share({ files: [file], title: '撮影した写真', text: `F${fValue} ${metaBPM}`});
+        } else {
+            const a = document.createElement("a"); a.href = imageUrl; a.download = fileName; a.click();
+        }
     } catch (error) {
-        console.error("撮影処理全体で致命的なエラー:", error);
-        alert("写真の撮影または保存に失敗しました。もう一度お試しください。");
+        console.error("撮影処理エラー:", error);
+        alert("写真の撮影または保存に失敗しました。");
+    } finally {
         shutterButton.classList.remove('disabled');
     }
   };
 
-  document.getElementById("album-button").onclick = () => { /* 省略(変更なし) */ gallery.style.display = gallery.style.display === "none" ? "flex" : "none"; };
-  function updateFValueDisplay() { /* 省略(変更なし) */ fValue = Math.round((scale - 0.25) / (4.0 - 0.25) * (2 - 22) + 22); centerCircle.textContent = fValue; fText.textContent = fValue; }
-  canvas.addEventListener("touchstart", (e) => { e.preventDefault(); if(e.touches.length === 2){ lastPinch = Math.hypot( e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY ); } });
-  canvas.addEventListener("touchmove", (e) => { e.preventDefault(); if(e.touches.length === 2){ const d = Math.hypot( e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY ); scale += (d - lastPinch) * 0.005; lastPinch = d; scale = Math.min(Math.max(scale, 0.25), 4); updateFValueDisplay(); updateCircleSize(); } });
-  canvas.addEventListener("touchend", (e) => { e.preventDefault(); /* ここには特に処理なし */ });
+  document.getElementById("album-button").onclick = () => { gallery.style.display = gallery.style.display === "none" ? "flex" : "none"; };
+  function updateFValueDisplay() { fValue = Math.round((scale - 0.25) / (4.0 - 0.25) * (2 - 22) + 22); centerCircle.textContent = fValue; fText.textContent = fValue; }
+  
+  // 【変更】意図しないズームを防止
+  const eventStopper = (e) => e.preventDefault();
+  canvas.addEventListener("touchstart", (e) => { eventStopper(e); if(e.touches.length === 2){ lastPinch = Math.hypot( e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY ); } }, { passive: false });
+  canvas.addEventListener("touchmove", (e) => { eventStopper(e); if(e.touches.length === 2){ const d = Math.hypot( e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY ); scale += (d - lastPinch) * 0.005; lastPinch = d; scale = Math.min(Math.max(scale, 0.25), 4); updateFValueDisplay(); updateCircleSize(); } }, { passive: false });
+  canvas.addEventListener("touchend", eventStopper, { passive: false });
 
-
-  function saveToLocalStorage(){ /* 省略(変更なし) */ const entries = []; gallery.querySelectorAll(".entry").forEach(entry => { const img = entry.querySelector("img"); const meta = entry.querySelector(".meta"); entries.push({ src: img.src, meta: meta.textContent }); }); localStorage.setItem("fshutter_album", JSON.stringify(entries)); }
-  function loadFromLocalStorage(){ /* 省略(変更なし) */ const saved = localStorage.getItem("fshutter_album"); if(saved){ const arr = JSON.parse(saved); arr.forEach(item => { const entry = document.createElement("div"); entry.className = "entry"; const img = document.createElement("img"); img.src = item.src; const meta = document.createElement("div"); meta.className = "meta"; meta.textContent = item.meta || "保存写真"; entry.appendChild(img); entry.appendChild(meta); gallery.appendChild(entry); }); } }
+  function saveToLocalStorage(){ const entries = []; gallery.querySelectorAll(".entry").forEach(entry => { const img = entry.querySelector("img"); const meta = entry.querySelector(".meta"); entries.push({ src: img.src, meta: meta.textContent }); }); localStorage.setItem("fshutter_album", JSON.stringify(entries)); }
+  function loadFromLocalStorage(){ const saved = localStorage.getItem("fshutter_album"); if(saved){ const arr = JSON.parse(saved); arr.forEach(item => { const entry = document.createElement("div"); entry.className = "entry"; const img = document.createElement("img"); img.src = item.src; const meta = document.createElement("div"); meta.className = "meta"; meta.textContent = item.meta || "保存写真"; entry.appendChild(img); entry.appendChild(meta); gallery.appendChild(entry); }); } }
 
   // 初期化処理
   await startCamera(currentFacingMode);
@@ -269,7 +240,7 @@
 </script>
 
 <script>
-    if ('serviceWorker' in navigator) { /* 省略(変更なし) */ window.addEventListener('load', () => { navigator.serviceWorker.register('./sw.js').then(reg => console.log('Service Worker 登録成功:', reg)).catch(err => console.error('Service Worker 登録失敗:', err)); }); }
+    if ('serviceWorker' in navigator) { window.addEventListener('load', () => { navigator.serviceWorker.register('./sw.js').then(reg => console.log('Service Worker 登録成功:', reg)).catch(err => console.error('Service Worker 登録失敗:', err)); }); }
 </script>
 
 </body>
