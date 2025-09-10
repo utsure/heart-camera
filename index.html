@@ -203,4 +203,64 @@
                 // GPS関連情報
                 const gpsDate = new Date(position.timestamp);
                 gps[piexif.GPSIFD.GPSDateStamp] = `${gpsDate.getUTCFullYear()}:${gpsDate.getUTCMonth()+1}:${gpsDate.getUTCDate()}`;
-                gps[piexif.GPSIFD.GPSTimeStamp] = [gpsDate.getUTCHours(), gpsDate.getUTCMinutes(), gpsDate.getUTCSeconds
+                gps[piexif.GPSIFD.GPSTimeStamp] = [gpsDate.getUTCHours(), gpsDate.getUTCMinutes(), gpsDate.getUTCSeconds()];
+                gps[piexif.GPSIFD.GPSLatitudeRef] = position.coords.latitude < 0 ? 'S' : 'N';
+                gps[piexif.GPSIFD.GPSLatitude] = piexif.GPSHelper.degToDms(position.coords.latitude);
+                gps[piexif.GPSIFD.GPSLongitudeRef] = position.coords.longitude < 0 ? 'W' : 'E';
+                gps[piexif.GPSIFD.GPSLongitude] = piexif.GPSHelper.degToDms(position.coords.longitude);
+                
+                const exifObj = {"0th":zeroth, "Exif":exif, "GPS":gps};
+                const exifBytes = piexif.dump(exifObj);
+                imageUrl = piexif.insert(exifBytes, imageUrl);
+            } catch (exifError) {
+                console.error("EXIF埋め込み失敗:", exifError);
+            }
+        }
+
+        const metaBPM = (bpm >= 60 && bpm <= 100) ? `${bpm} BPM` : "--- BPM";
+        const metaText = `F${fValue}\n${metaBPM}\n${locationString}\n${new Date().toLocaleString('ja-JP')}`;
+        
+        const entry = document.createElement("div"); entry.className = "entry"; const img = document.createElement("img"); img.src = imageUrl; const meta = document.createElement("div"); meta.className = "meta"; meta.textContent = metaText; entry.appendChild(img); entry.appendChild(meta); gallery.prepend(entry);
+        saveToLocalStorage();
+
+        const blob = await fetch(imageUrl).then(res => res.blob());
+        const fileName = `F-Shutter_${new Date().getTime()}.jpg`;
+        const file = new File([blob], fileName, { type: 'image/jpeg' });
+        
+        if (navigator.share && navigator.canShare({ files: [file] })) {
+            await navigator.share({ files: [file], title: '撮影した写真' });
+        } else {
+            const a = document.createElement("a"); a.href = imageUrl; a.download = fileName; a.click();
+        }
+    } catch (error) {
+        console.error("撮影処理エラー:", error);
+        alert("写真の撮影または保存に失敗しました。");
+    } finally {
+        shutterButton.classList.remove('disabled');
+    }
+  };
+
+  document.getElementById("album-button").onclick = () => { gallery.style.display = gallery.style.display === "none" ? "flex" : "none"; };
+  function updateFValueDisplay() { fValue = Math.round((scale - 0.25) / (4.0 - 0.25) * (2 - 22) + 22); centerCircle.textContent = fValue; fText.textContent = fValue; }
+  
+  const eventStopper = (e) => e.preventDefault();
+  canvas.addEventListener("touchstart", (e) => { eventStopper(e); if(e.touches.length === 2){ lastPinch = Math.hypot( e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY ); } }, { passive: false });
+  canvas.addEventListener("touchmove", (e) => { eventStopper(e); if(e.touches.length === 2){ const d = Math.hypot( e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY ); scale += (d - lastPinch) * 0.005; lastPinch = d; scale = Math.min(Math.max(scale, 0.25), 4); updateFValueDisplay(); updateCircleSize(); } }, { passive: false });
+
+  function saveToLocalStorage(){ const entries = []; gallery.querySelectorAll(".entry").forEach(entry => { const img = entry.querySelector("img"); const meta = entry.querySelector(".meta"); entries.push({ src: img.src, meta: meta.textContent }); }); localStorage.setItem("fshutter_album", JSON.stringify(entries)); }
+  function loadFromLocalStorage(){ const saved = localStorage.getItem("fshutter_album"); if(saved){ const arr = JSON.parse(saved); arr.forEach(item => { const entry = document.createElement("div"); entry.className = "entry"; const img = document.createElement("img"); img.src = item.src; const meta = document.createElement("div"); meta.className = "meta"; meta.textContent = item.meta || "保存写真"; entry.appendChild(img); entry.appendChild(meta); gallery.appendChild(entry); }); } }
+
+  await startCamera(currentFacingMode);
+  updateFValueDisplay();
+  updateCircleSize();
+  loadFromLocalStorage();
+  requestAnimationFrame(loop);
+
+})();
+</script>
+<script>
+    if ('serviceWorker' in navigator) { window.addEventListener('load', () => { navigator.serviceWorker.register('./sw.js').then(reg => console.log('Service Worker 登録成功:', reg)).catch(err => console.error('Service Worker 登録失敗:', err)); }); }
+</script>
+
+</body>
+</html>
