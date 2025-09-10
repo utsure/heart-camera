@@ -144,7 +144,7 @@
   const canvas = document.getElementById("canvas");
   const ctx = canvas.getContext("2d", { willReadFrequently: true });
   const bpmText = document.getElementById("bpm-value");
-  const fText = document.getElementById("f-value"); // 変数名をfTextに戻す
+  const fText = document.getElementById("f-value");
   const graph = document.getElementById("graph");
   const gctx = graph.getContext("2d");
   const gallery = document.getElementById("gallery");
@@ -154,7 +154,7 @@
   let bpm = 0;
   let history = [];
   let scale = 0.25;
-  let fValue = 22; // 変数名をapertureValueからfValueに戻す
+  let fValue = 22;
   let lastPinch = 0;
 
   try {
@@ -227,7 +227,10 @@
         tc.drawImage(video, 0, 0, width, height);
         return;
     }
-    const numFrames = Math.round(1 + (100 - bpm) / (100 - 60) * 9);
+    
+    // 【変更】ブレの効果を強調。BPM60の時に重ねるフレーム数を最大25枚に増やします。
+    const numFrames = Math.round(1 + (100 - bpm) / (100 - 60) * 24);
+    
     tc.globalAlpha = 1.0 / numFrames;
     for (let i = 0; i < numFrames; i++) {
         tc.drawImage(video, 0, 0, width, height);
@@ -238,25 +241,11 @@
     tc.globalAlpha = 1.0;
   }
 
-  // 【新設】位置情報を取得する関数
-  function getLocation() {
-    return new Promise((resolve, reject) => {
-        if (!navigator.geolocation) {
-            reject(new Error("Geolocation is not supported by your browser."));
-        } else {
-            navigator.geolocation.getCurrentPosition(
-                (position) => resolve(position),
-                (error) => reject(error)
-            );
-        }
-    });
-  }
-
+  function getLocation() { /* 省略(変更なし) */ return new Promise((resolve, reject) => { if (!navigator.geolocation) { reject(new Error("Geolocation is not supported by your browser.")); } else { navigator.geolocation.getCurrentPosition( (position) => resolve(position), (error) => reject(error) ); } }); }
   document.getElementById("start-bpm-button").onclick = () => { /* 省略(変更なし) */ if(measuring) return; measuring = true; history = []; bpmText.textContent = "測定中..."; setTimeout(() => { measuring = false; const newBpm = calcBPM(); if(newBpm >= 60 && newBpm <= 100){ bpm = newBpm; bpmText.textContent = bpm; } else { bpm = 0; bpmText.textContent = "---"; } }, 8000); };
 
   // 【変更】撮影時の処理
   document.getElementById("shutter-button").onclick = async () => {
-    // 1. 位置情報を取得 (初回は許可が必要)
     let locationString = "位置情報なし";
     try {
         const position = await getLocation();
@@ -267,7 +256,6 @@
         console.warn("位置情報の取得に失敗:", error.message);
     }
 
-    // 2. 撮影処理
     const tmp = document.createElement("canvas");
     tmp.width = video.videoWidth;
     tmp.height = video.videoHeight;
@@ -276,11 +264,9 @@
     await captureWithMotionBlur(tc, video, bpm, tmp.width, tmp.height);
     const url = tmp.toDataURL("image/jpeg", 0.9);
 
-    // 3. メタデータ作成
     const metaBPM = (bpm >= 60 && bpm <= 100) ? `${bpm} BPM` : "--- BPM";
     const metaText = `F${fValue}\n${metaBPM}\n${locationString}\n${new Date().toLocaleString('ja-JP')}`;
 
-    // 4. アルバムに追加
     const entry = document.createElement("div");
     entry.className = "entry";
     const img = document.createElement("img");
@@ -293,19 +279,36 @@
     gallery.prepend(entry);
     saveToLocalStorage();
 
-    // 5. 【新設】デバイスに画像をダウンロード
-    const a = document.createElement("a");
-    a.href = url;
-    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-    a.download = `F-Shutter_${timestamp}.jpg`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
+    // 【変更】自動ダウンロードの代わりに「共有」機能を呼び出す
+    try {
+        const blob = await (await fetch(url)).blob();
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+        const fileName = `F-Shutter_${timestamp}.jpg`;
+        const file = new File([blob], fileName, { type: 'image/jpeg' });
+
+        if (navigator.canShare && navigator.canShare({ files: [file] })) {
+            await navigator.share({
+                files: [file],
+                title: '撮影した写真',
+                text: `F${fValue} ${metaBPM}`,
+            });
+        } else {
+            // 共有機能が使えないブラウザのための予備としてダウンロードリンクを残します
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = fileName;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+        }
+    } catch (error) {
+        console.error("共有または保存に失敗しました:", error);
+        alert("写真の共有または保存に失敗しました。");
+    }
   };
 
   document.getElementById("album-button").onclick = () => { gallery.style.display = gallery.style.display === "none" ? "flex" : "none"; };
   
-  // 【変更】F値の表示を更新する関数
   function updateFValueDisplay() {
       fValue = Math.round((scale - 0.25) / (4.0 - 0.25) * (2 - 22) + 22);
       centerCircle.textContent = fValue;
@@ -313,17 +316,7 @@
   }
 
   canvas.addEventListener("touchstart", (e) => { /* 省略(変更なし) */ if(e.touches.length === 2){ lastPinch = Math.hypot( e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY ); } });
-  canvas.addEventListener("touchmove", (e) => {
-    if(e.touches.length === 2){
-      const d = Math.hypot( e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY );
-      scale += (d - lastPinch) * 0.005;
-      lastPinch = d;
-      scale = Math.min(Math.max(scale, 0.25), 4);
-      updateFValueDisplay();
-      updateCircleSize();
-    }
-  });
-
+  canvas.addEventListener("touchmove", (e) => { /* 省略(変更なし) */ if(e.touches.length === 2){ const d = Math.hypot( e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY ); scale += (d - lastPinch) * 0.005; lastPinch = d; scale = Math.min(Math.max(scale, 0.25), 4); updateFValueDisplay(); updateCircleSize(); } });
   function saveToLocalStorage(){ /* 省略(変更なし) */ const entries = []; gallery.querySelectorAll(".entry").forEach(entry => { const img = entry.querySelector("img"); const meta = entry.querySelector(".meta"); entries.push({ src: img.src, meta: meta.textContent }); }); localStorage.setItem("fshutter_album", JSON.stringify(entries)); }
   function loadFromLocalStorage(){ /* 省略(変更なし) */ const saved = localStorage.getItem("fshutter_album"); if(saved){ const arr = JSON.parse(saved); arr.forEach(item => { const entry = document.createElement("div"); entry.className = "entry"; const img = document.createElement("img"); img.src = item.src; const meta = document.createElement("div"); meta.className = "meta"; meta.textContent = item.meta || "保存写真"; entry.appendChild(img); entry.appendChild(meta); gallery.appendChild(entry); }); } }
 
