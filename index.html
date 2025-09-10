@@ -19,7 +19,7 @@
     width: 100%; height: 100%;
     object-fit: cover;
     z-index: 1;
-    filter: none;
+    filter: none; /* videoに直接フィルターを当てるため、canvasの初期フィルターはnone */
   }
   #info-box, #album-button, #center-circle, #graph-container, #shutter-button, #start-bpm-button {
     position: absolute; z-index: 10; user-select: none;
@@ -84,8 +84,10 @@
     display: flex;
     justify-content: center;
     align-items: center;
-    font-size: 24px;
+    font-size: 48px; /* 数字が見やすいようにフォントサイズを調整 */
     font-weight: bold;
+    color: white;
+    text-shadow: 0 0 5px black;
     width: 150px; height: 150px;
     transition: width 0.2s, height 0.2s;
     pointer-events: none;
@@ -128,10 +130,10 @@
 <body>
 <video id="video" autoplay muted playsinline></video>
 <canvas id="canvas"></canvas>
-<div id="info-box">F: <span id="f-value">---</span><br>BPM: <span id="bpm-value">---</span></div>
+<div id="info-box">Ap: <span id="ap-value">---</span><br>BPM: <span id="bpm-value">---</span></div>
 <div id="album-button">アルバム</div>
 <div id="gallery"></div>
-<div id="center-circle">心のF値</div>
+<div id="center-circle">22</div>
 <div id="graph-container"><canvas id="graph"></canvas></div>
 <div id="shutter-button" title="撮影"></div>
 <div id="start-bpm-button">BPM測定</div>
@@ -142,7 +144,7 @@
   const canvas = document.getElementById("canvas");
   const ctx = canvas.getContext("2d");
   const bpmText = document.getElementById("bpm-value");
-  const fText = document.getElementById("f-value");
+  const apText = document.getElementById("ap-value"); // F値からApに表記変更
   const graph = document.getElementById("graph");
   const gctx = graph.getContext("2d");
   const gallery = document.getElementById("gallery");
@@ -151,8 +153,8 @@
   let measuring = false;
   let bpm = 0;
   let history = [];
-  let scale = 1;
-  let fValue = 4;
+  let scale = 0.25; // 円が最大の時にAp2になるよう、scaleの初期値を調整
+  let apertureValue = 22; // F値から絞り値(apertureValue)に名称変更
   let lastPinch = 0;
 
   // カメラ取得
@@ -164,7 +166,7 @@
     return;
   }
 
-  // リサイズ
+  // リサイズ (canvasはBPM測定用としてvideoと同じサイズにする)
   function resize() {
     canvas.width = video.videoWidth;
     canvas.height = video.videoHeight;
@@ -172,27 +174,35 @@
     graph.height = graph.clientHeight;
   }
 
-  // F値に応じた円サイズを更新
+  // 絞り値(apertureValue)に応じた円サイズを更新
   function updateCircleSize() {
     const radius = 150 * scale;
     centerCircle.style.width = radius + "px";
     centerCircle.style.height = radius + "px";
   }
 
-  // F値に応じてCSSフィルター計算（動画プレビュー用）
-  function computeCssFilter(fval) {
-    const blurPx = fval <= 10 ? Math.min((10 - fval) * 2, 20) : 0;
-    // F値が低いほど明るく(1.8)、高いほど暗く(0.6)なるようにマッピング
-    const brightness = 1.9 - (fval * 0.08125);
-    return `blur(${blurPx}px) brightness(${brightness})`;
+  // 【変更】絞り値(apertureValue)に応じてCSSフィルター計算（動画プレビュー用）
+  function computeCssFilter(apValue) {
+    // プレビューでは「ぼかし」は適用しない（重いため）
+    // 明るさのみ連動させる
+    const brightness = 2.0 - (apValue / 22); // Ap2で明るく(2.0), Ap22で暗く(1.0)
+    return `brightness(${brightness.toFixed(2)})`;
   }
+
+  // 【新設】絞り値(apertureValue)とBPMに応じた撮影時フィルター（ぼかし＋明るさ）
+  function computeCaptureFilter(apValue) {
+    const blurPx = Math.max(0, (22 - apValue) / 20 * 10); // Ap2で最大ボケ, Ap22でボケなし
+    const brightness = 2.0 - (apValue / 22); // Ap2で明るく, Ap22で暗く
+    return `blur(${blurPx.toFixed(1)}px) brightness(${brightness.toFixed(2)})`;
+  }
+
 
   video.addEventListener("loadeddata", () => {
     resize();
+    updateApertureDisplay(); // 絞り値表示を更新
     updateCircleSize();
-    fText.textContent = fValue.toFixed(1);
     requestAnimationFrame(loop);
-    loadFromLocalStorage(); // 追加：起動時にストレージから読み込む
+    loadFromLocalStorage();
   });
   window.addEventListener("resize", () => {
     resize();
@@ -237,20 +247,20 @@
     const dur = (times[times.length-1] - times[0]) / 1000;
     if (dur < 5) return 0;
     const freqRes = 1 / dur;
-    // 【変更】ピーク検出範囲を60-100 BPMに限定
     const peaks = power.map((p,i) => ({bpm: i * freqRes * 60, power: p})).filter(o => o.bpm >= 60 && o.bpm <= 100);
     if (!peaks.length) return 0;
     return Math.round(peaks.reduce((a,b) => a.power > b.power ? a : b).bpm);
   }
 
+  // 【変更】メインループ (BPM測定とプレビューフィルター)
   function loop() {
-    // 動画にリアルタイムフィルター反映
-    video.style.filter = computeCssFilter(fValue);
+    // videoにリアルタイムフィルター反映 (ぼかしなし)
+    video.style.filter = computeCssFilter(apertureValue);
 
-    // canvasは波形計測用にフィルターなし描画（動画映像を取得）
+    // canvasは波形計測用にフィルターなしでvideoから映像を取得
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     if (measuring) {
-      ctx.filter = 'none';
+      ctx.filter = 'none'; // 念のためフィルターを解除
       ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
       const size = 100;
@@ -272,16 +282,22 @@
   // スリープ関数
   const sleep = ms => new Promise(res => setTimeout(res, ms));
 
-  // 【新設】BPMに応じたモーションブラー撮影
+  // 【変更】BPMに応じたモーションブラー撮影
   async function captureWithMotionBlur(tc, video, bpm, width, height) {
-    if (bpm < 60 || bpm > 100) { // 範囲外なら通常撮影
+    // 撮影時にも絞り値によるフィルターを適用
+    tc.filter = computeCaptureFilter(apertureValue);
+
+    if (bpm < 60 || bpm > 100) { // 範囲外なら通常撮影 (フィルターは適用済)
         tc.drawImage(video, 0, 0, width, height);
+        tc.filter = 'none'; // 描画後にフィルターをリセット
         return;
     }
-    // BPMが低いほどフレーム数が多くなる（モーションブラーが強くなる）
-    // 60 BPM -> 10フレーム, 100 BPM -> 1フレーム
-    const numFrames = Math.round(1 + (100 - bpm) / (100 - 60) * 9);
     
+    // 【修正】BPM 60 -> 10フレーム (ブレる), BPM 100 -> 1フレーム (クッキリ)
+    // 60 BPM -> 最もブレる（例: 10フレーム重ねる）
+    // 100 BPM -> 最もクッキリ（例: 1フレーム重ねる = 通常撮影）
+    const numFrames = Math.round(1 + (100 - bpm) / (100 - 60) * 9); // 1 (100BPM) から 10 (60BPM) の範囲
+
     tc.globalAlpha = 1.0 / numFrames; // フレームを平均化するためにアルファ値を設定
     
     for (let i = 0; i < numFrames; i++) {
@@ -290,6 +306,7 @@
     }
     
     tc.globalAlpha = 1.0; // アルファ値を元に戻す
+    tc.filter = 'none'; // 描画後にフィルターをリセット
   }
 
   document.getElementById("start-bpm-button").onclick = () => {
@@ -300,12 +317,11 @@
     setTimeout(() => {
       measuring = false;
       const newBpm = calcBPM();
-      // 【変更】BPMが60-100の範囲内のみ有効とする
       if(newBpm >= 60 && newBpm <= 100){
         bpm = newBpm;
         bpmText.textContent = bpm;
       } else {
-        bpm = 0; // 範囲外ならリセット
+        bpm = 0;
         bpmText.textContent = "---";
       }
     }, 8000);
@@ -314,19 +330,13 @@
   // 撮影時
   document.getElementById("shutter-button").onclick = async () => {
     const tmp = document.createElement("canvas");
-    tmp.width = canvas.width;
-    tmp.height = canvas.height;
+    // 撮影時の解像度はvideoの本来の解像度を使う (高画質)
+    tmp.width = video.videoWidth;
+    tmp.height = video.videoHeight;
     const tc = tmp.getContext("2d");
 
-    // 【変更】ぼかしと明るさのフィルターをF値から設定
-    const blurPx = fValue <= 10 ? Math.min((10 - fValue) * 2, 20) : 0;
-    const brightness = 1.9 - (fValue * 0.08125);
-    tc.filter = `blur(${blurPx}px) brightness(${brightness})`;
-    
-    // 【変更】BPMに応じたモーションブラー撮影を実行
+    // BPMに応じたモーションブラー撮影を実行（この中で絞り値フィルターも適用される）
     await captureWithMotionBlur(tc, video, bpm, tmp.width, tmp.height);
-
-    // 【削除】BPMによるピクセル単位の色補正処理を削除
 
     const url = tmp.toDataURL("image/jpeg", 0.9);
 
@@ -337,10 +347,10 @@
     const meta = document.createElement("div");
     meta.className = "meta";
     const metaBPM = (bpm >= 60 && bpm <= 100) ? `${bpm} BPM` : "--- BPM";
-    meta.textContent = `F${fValue.toFixed(1)}\n${metaBPM}\n${new Date().toLocaleString('ja-JP')}`;
+    meta.textContent = `Ap ${apertureValue}\n${metaBPM}\n${new Date().toLocaleString('ja-JP')}`; // Ap表記に修正
     entry.appendChild(img);
     entry.appendChild(meta);
-    gallery.prepend(entry); // 新しい写真が先頭に来るように変更
+    gallery.prepend(entry);
 
     saveToLocalStorage();
   };
@@ -350,7 +360,7 @@
     gallery.style.display = gallery.style.display === "none" ? "flex" : "none";
   };
 
-  // ピンチズームでfValue変更と円サイズ更新
+  // 【変更】ピンチズームで絞り値(apertureValue)変更と円サイズ更新
   canvas.addEventListener("touchstart", (e) => {
     if(e.touches.length === 2){
       lastPinch = Math.hypot(
@@ -368,8 +378,13 @@
       scale += (d - lastPinch) * 0.005;
       lastPinch = d;
       scale = Math.min(Math.max(scale, 0.25), 4);
-      fValue = 16 / scale / 4; // fValueは 1.0 (scale=4) から 16.0 (scale=0.25) の範囲
-      fText.textContent = fValue.toFixed(1);
+      
+      // scale (0.25-4) を apertureValue (22-2) にマッピング
+      // scaleが0.25(最小円)の時 apertureValue=22
+      // scaleが4(最大円)の時 apertureValue=2
+      apertureValue = Math.round((scale - 0.25) / (4 - 0.25) * (2 - 22) + 22);
+      apText.textContent = apertureValue; // Ap表記に修正
+      centerCircle.textContent = apertureValue; // 中央の円の表記も変更
       updateCircleSize();
     }
   });
@@ -397,7 +412,6 @@
         img.src = item.src;
         const meta = document.createElement("div");
         meta.className = "meta";
-        // 復元時はメタデータも復元
         meta.textContent = item.meta || "保存写真"; 
         entry.appendChild(img);
         entry.appendChild(meta);
